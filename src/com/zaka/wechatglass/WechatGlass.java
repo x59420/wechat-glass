@@ -24,7 +24,7 @@ public final class WechatGlass {
     static final String TAG = "wxglass";
 
     /** 版本号，和 build.gradle.kts 里的 versionName 一起改。 */
-    static final String VER = "0.1.0";
+    static final String VER = "0.1.1";
 
     private static volatile boolean verbose = true;
     private static final Set<String> SAID = new HashSet<String>();

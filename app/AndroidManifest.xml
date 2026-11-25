@@ -12,20 +12,10 @@
         android:allowBackup="false">
 
         <!--
-            设置界面：桌面图标进入（微信没有合适的原生菜单位置可以塞入口，
-            所以这里保留一个自己的图标，不做任何注入）。
+            没有 Activity、没有桌面图标：
+            设置入口是微信「我」页面里「设置」上方那一行 wxglass（见 WxMenuEntry），
+            由微信自己的偏好列表渲染，模块不额外占用桌面。
         -->
-        <activity
-            android:name=".DockSettingsActivity"
-            android:exported="true"
-            android:label="wxglass"
-            android:configChanges="uiMode|orientation|screenSize|smallestScreenSize|screenLayout|keyboardHidden|density|layoutDirection"
-            android:theme="@android:style/Theme.DeviceDefault.NoActionBar">
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
-                <category android:name="android.intent.category.LAUNCHER" />
-            </intent-filter>
-        </activity>
 
         <meta-data android:name="xposedmodule" android:value="true" />
         <meta-data android:name="xposeddescription"

@@ -47,6 +47,7 @@ public final class WxEntry implements IXposedHookLoadPackage, IXposedHookZygoteI
         hookActivityResume();
         hookActivityDestroy();
         hookApplication();
+        WxMenuEntry.hook(lp.classLoader);
     }
 
     /** 每次有页面回到前台都问一次：是不是微信首页。 */
