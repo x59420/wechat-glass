@@ -2,6 +2,9 @@ package com.zaka.wechatglass;
 
 import android.app.Activity;
 import android.content.Context;
+import android.widget.BaseAdapter;
+
+import java.lang.reflect.Field;
 
 import de.robv.android.xposed.XC_MethodHook;
 import de.robv.android.xposed.XposedBridge;
@@ -18,15 +21,16 @@ import de.robv.android.xposed.XposedHelpers;
  *
  * 实现只在微信自己的 Preference 体系里加一条 Preference：
  *   MoreTabUI(=「我」页面) 里那套列表是 MMPreferenceFragment + g0(adapter)，
- *   加条目走 g0.d(pref, position)，点击走 MoreTabUI.w0(...)，
+ *   加条目走 g0.d(pref, position)，点击走 MoreTabUI.w0(...) / y0(...)，
  *   全程不碰微信的布局、不碰 Dock、不碰其它条目。
  * 任何一步对不上（微信换版本把方法名改了）就整段静默放弃，
  * 「我」页面维持原生，绝不因为插一行把微信搞崩。
  *
  * 下面这些混淆名都是照微信 8.0.80(3220) 的原生包核对过的：
  *   MoreTabUI.w0(q, Preference, m0)Z          —— 「我」页面的条目点击回调
+ *   MoreTabUI.y0(q, Preference, View)Z        —— 另一种条目点击回调
  *   AbstractTabChildPreference.onResume()V    —— 「我」页面每次回到前台
- *   MMPreferenceFragment.d : g0               —— 偏好列表 adapter
+ *   MMPreferenceFragment.d : g0               —— 偏好列表 adapter（另有按类型兜底）
  *   g0.h(String)            按 key 找条目
  *   g0.m(String)            按 key 取位置
  *   g0.d(Preference, int)   插入条目（-1 = 末尾）
@@ -52,16 +56,17 @@ final class WxMenuEntry {
 
     static void hook(final ClassLoader cl) {
         if (cl == null) return;
-        hookClick(cl);
+        hookClick(cl, "w0");
+        hookClick(cl, "y0");
         hookInsert(cl);
     }
 
     // ------------------------------------------------------------ 点击
 
-    private static void hookClick(final ClassLoader cl) {
+    private static void hookClick(final ClassLoader cl, final String method) {
         try {
             Class<?> moreTab = XposedHelpers.findClass(CLS_MORE_TAB, cl);
-            XposedBridge.hookAllMethods(moreTab, "w0", new XC_MethodHook() {
+            XposedBridge.hookAllMethods(moreTab, method, new XC_MethodHook() {
                 @Override
                 protected void beforeHookedMethod(MethodHookParam param) {
                     try {
@@ -71,23 +76,26 @@ final class WxMenuEntry {
                         Object key = XposedHelpers.callMethod(preference, "j");
                         if (!ENTRY_KEY.equals(key)) return;
 
+                        // 先拦掉微信自己的处理，再弹我们的设置：
+                        // 这样就算浮层弹不出来，也绝不会顺手打开「设置」页。
+                        param.setResult(Boolean.TRUE);
+
                         Activity activity = activityOf(param.thisObject);
                         if (activity == null) {
                             WechatGlass.warn("入口:点到了 wxglass，但拿不到 Activity");
                             return;
                         }
-                        WechatGlass.log("入口:打开 wxglass 设置");
-                        // 返回 true = 这次点击我们处理完了，不再往下走微信的逻辑。
-                        param.setResult(Boolean.TRUE);
+                        WechatGlass.log("入口:打开 wxglass 设置（" + method + "）");
                         IsoDock.showSettings(activity);
                     } catch (Throwable t) {
                         WechatGlass.warnOnce("menu-click", "入口:点击处理失败: " + t);
                     }
                 }
             });
-            WechatGlass.log("入口:已挂上「我」页面的 wxglass 条目");
+            WechatGlass.log("入口:已挂上「我」页面的 " + method);
         } catch (Throwable t) {
-            WechatGlass.warn("入口:「我」页面类没找到，跳过设置入口（" + t + "）");
+            WechatGlass.warnOnce("menu-click-hook-" + method,
+                    "入口:挂 " + method + " 失败: " + t);
         }
     }
 
@@ -115,9 +123,54 @@ final class WxMenuEntry {
         }
     }
 
+    /**
+     * 拿「我」页面的偏好列表 adapter。
+     *
+     * 8.0.80 里字段名是 {@code d}（类型 g0 extends BaseAdapter）；
+     * 万一以后改名，就沿继承链按类型兜底找一个「继承 BaseAdapter 且带
+     * h(String)/m(String)/d(Preference,int) 的字段」，找不到就返回 null。
+     */
+    private static Object findAdapter(Object fragment) {
+        try {
+            Object value = XposedHelpers.getObjectField(fragment, "d");
+            if (looksLikeAdapter(value)) return value;
+        } catch (Throwable ignored) {
+        }
+        Class<?> c = fragment.getClass();
+        while (c != null && c != Object.class) {
+            Field[] fields;
+            try {
+                fields = c.getDeclaredFields();
+            } catch (Throwable t) {
+                break;
+            }
+            for (Field f : fields) {
+                try {
+                    f.setAccessible(true);
+                    Object value = f.get(fragment);
+                    if (looksLikeAdapter(value)) return value;
+                } catch (Throwable ignored) {
+                }
+            }
+            c = c.getSuperclass();
+        }
+        return null;
+    }
+
+    private static boolean looksLikeAdapter(Object value) {
+        if (!(value instanceof BaseAdapter)) return false;
+        try {
+            value.getClass().getMethod("h", String.class);
+            value.getClass().getMethod("m", String.class);
+            return true;
+        } catch (Throwable t) {
+            return false;
+        }
+    }
+
     /** 幂等：已经有这一行就直接返回。 */
     private static void ensureEntry(Object fragment, ClassLoader cl) {
-        Object adapter = XposedHelpers.getObjectField(fragment, "d");
+        Object adapter = findAdapter(fragment);
         if (adapter == null) return;
 
         Object existed = XposedHelpers.callMethod(adapter, "h", ENTRY_KEY);
