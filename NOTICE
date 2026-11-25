@@ -1,0 +1,59 @@
+wxglass (WeChat dock liquid glass)
+Copyright (C) 2025 Zaka
+
+本项目是「微信底部导航栏 → 悬浮液态玻璃 Dock」的 LSPosed 模块，
+外观与几何参数沿用同作者的 dydock（抖音底栏液态玻璃）。
+
+This product includes software developed as part of:
+
+  tiann / KernelSU
+  https://github.com/tiann/KernelSU
+  FloatingBottomBar 以及 liquid/*、animation/*、modifier/* 的移植来源。
+
+  compose-miuix-ui (top.yukonga.miuix)
+  https://github.com/miuix-kotlin-multiplatform/compose-miuix-ui
+  KernelSU 那份底栏改编自其 IosLiquidGlassNavigationBar 示例，Apache License 2.0。
+
+  Kyant0 / AndroidLiquidGlass
+  https://github.com/Kyant0/AndroidLiquidGlass
+  Copyright (C) 2025 Kyant
+  Licensed under the Apache License, Version 2.0.
+  折射着色器、方向高光、色散与弹簧动画的来源。
+
+  lengroo / pdd-LiquidGlass
+  https://github.com/lengroo/pdd-LiquidGlass
+  MIT License.
+  「只接管指定区域、用宿主内容当玻璃背景」的思路来源。
+
+Derived portions used in this project:
+
+  - src/com/zaka/wechatglass/ksu/FloatingBottomBar.kt
+      底栏容器、拖动 / 弹簧回位、高光与选中态，移植自 KernelSU 的
+      FloatingBottomBar 与 compose-miuix-ui 的 IosLiquidGlassNavigationBar 示例。
+
+  - src/com/zaka/wechatglass/ksu/liquid/Lens.kt
+  - src/com/zaka/wechatglass/ksu/liquid/InnerShadow.kt
+  - src/com/zaka/wechatglass/ksu/liquid/Vibrancy.kt
+  - src/com/zaka/wechatglass/ksu/liquid/CombinedBackdrop.kt
+      折射（圆角 SDF）、内阴影、vibrancy 与合成背板，参数与效果的顺序
+      （vibrancy → blur → lens → highlight → surface tint → inner shadow）
+      跟随 AndroidLiquidGlass。
+
+  - src/com/zaka/wechatglass/ksu/animation/DampedDragAnimation.kt
+  - src/com/zaka/wechatglass/ksu/animation/InteractiveHighlight.kt
+  - src/com/zaka/wechatglass/ksu/modifier/DragGestureInspector.kt
+      拖动阻尼、按压高光与手势探测，同源自 KernelSU / compose-miuix-ui。
+
+  - src/com/zaka/wechatglass/iso/IsoOverlay.kt
+      玻璃层的组装（采样背板、胶囊、图标与文字、点击转发）改编自
+      dydock 的同名文件。
+
+  - src/com/zaka/wechatglass/WxDockController.java
+  - src/com/zaka/wechatglass/WxTabBar.java
+      宿主适配层为本项目针对微信重写：定位 LauncherUIBottomTabView、
+      量位置、隐藏原生底栏、把点击转发回原生导航项。
+
+上述项目的版权归各自作者所有。衍生部分同样以 Apache License 2.0 发布。
+
+本项目仅供学习、研究与个人非商业用途；为非官方第三方模块，
+与腾讯及微信官方无隶属关系。

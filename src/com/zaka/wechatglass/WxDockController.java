@@ -1,0 +1,605 @@
+package com.zaka.wechatglass;
+
+import android.app.Activity;
+import android.graphics.Bitmap;
+import android.graphics.Rect;
+import android.os.Handler;
+import android.os.Looper;
+import android.os.SystemClock;
+import android.view.View;
+import android.view.ViewGroup;
+import android.view.ViewParent;
+import android.widget.FrameLayout;
+
+import java.util.ArrayList;
+import java.util.List;
+import java.util.WeakHashMap;
+import java.util.function.Consumer;
+import java.util.function.IntConsumer;
+
+/**
+ * 把微信底部那条原生导航栏换成悬浮液态玻璃 Dock。
+ *
+ * 与 dydock 的关系：玻璃渲染（Compose + Miuix、折射 / 色散 / 高光 / 弹簧）
+ * 和几何参数完全沿用 dydock，这边只重写"宿主适配层"——找微信底栏、量位置、
+ * 让原生底栏让位、把点击转发回原生导航项。
+ *
+ * 三条硬约束：
+ *   1. **不动微信的交互逻辑**：点击一律模拟真实触摸给原生底栏，模块不接管切换；
+ *      原生底栏只把 alpha 归零（SelfMask 登记原值），绝不 setVisibility(GONE)，
+ *      否则会触发微信重新布局、底栏位置和状态都会跟着变。
+ *   2. **先确认玻璃画出来了，再藏原生底栏**：反过来做，中途任何一步失败就是
+ *      "原生没了、玻璃也没上来"，用户看到整条底栏消失。另外带一个看门狗兜底。
+ *   3. **位置量一次就钉住**：只在窗口尺寸变化（转屏 / 分屏）时重量，
+ *      不跟着微信底栏每帧漂。
+ */
+final class WxDockController {
+
+    private static final Handler MAIN = new Handler(Looper.getMainLooper());
+
+    /** 轮询间隔：同步图标 / 选中态 / 可见性。 */
+    private static final long POLL_MS = 200L;
+    /** 找底栏的重试：微信首屏要等布局，最多重试这么多次。 */
+    private static final int MAX_TRIES = 20;
+    private static final long RETRY_MS = 250L;
+    /** 玻璃多久没画出来就认为失败，把原生底栏还回去。 */
+    private static final long WATCHDOG_MS = 2600L;
+    /** 显示 / 隐藏的过渡，和 dydock 一致：150ms / 110ms。 */
+    private static final long IN_MS = 150L;
+    private static final long OUT_MS = 110L;
+
+    private static final WeakHashMap<Activity, Boolean> KNOWN =
+            new WeakHashMap<Activity, Boolean>();
+    private static final WeakHashMap<Activity, IsoDock> OVERLAYS =
+            new WeakHashMap<Activity, IsoDock>();
+    private static final WeakHashMap<Activity, Backdrop> BACKDROPS =
+            new WeakHashMap<Activity, Backdrop>();
+    private static final WeakHashMap<Activity, ViewGroup> BARS =
+            new WeakHashMap<Activity, ViewGroup>();
+    private static final WeakHashMap<Activity, List<View>> ITEMS =
+            new WeakHashMap<Activity, List<View>>();
+    private static final WeakHashMap<Activity, Rect> BANDS =
+            new WeakHashMap<Activity, Rect>();
+    private static final WeakHashMap<Activity, Runnable> POLLERS =
+            new WeakHashMap<Activity, Runnable>();
+    private static final WeakHashMap<Activity, Boolean> LIVE =
+            new WeakHashMap<Activity, Boolean>();
+
+    private WxDockController() {
+    }
+
+    // ------------------------------------------------------------ 页面生命周期
+
+    /** 微信首页（LauncherUI）才会挂 Dock。 */
+    static boolean isHost(Activity act) {
+        if (act == null) return false;
+        try {
+            String name = act.getClass().getName();
+            return name.endsWith(".LauncherUI") || name.endsWith("LauncherUI");
+        } catch (Throwable t) {
+            return false;
+        }
+    }
+
+    static void onHostResume(final Activity act) {
+        if (!isHost(act)) return;
+        synchronized (KNOWN) {
+            KNOWN.put(act, Boolean.TRUE);
+        }
+        if (OVERLAYS.containsKey(act)) {
+            // 回到前台：重新贴一次位置（转屏 / 分屏后会用到），并让 Dock 立刻出现。
+            Runnable refresh = POLLERS.get(act);
+            if (refresh != null) refresh.run();
+            return;
+        }
+        attempt(act, 0);
+    }
+
+    static void release(Activity act) {
+        if (act == null) return;
+        teardown(act, "页面销毁");
+        synchronized (KNOWN) {
+            KNOWN.remove(act);
+        }
+    }
+
+    static void onHostPause(Activity act) {
+        // 微信切到别的 Activity（聊天页等）时，Dock 挂在 LauncherUI 的 decor 上，
+        // 本来就跟着一起不可见，这里不需要额外动作。
+    }
+
+    // ------------------------------------------------------------ 安装
+
+    private static void attempt(final Activity act, final int n) {
+        MAIN.postDelayed(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    if (act.isFinishing() || act.isDestroyed()) return;
+                    if (OVERLAYS.containsKey(act)) return;
+                    if (install(act)) return;
+                    if (n + 1 >= MAX_TRIES) {
+                        WechatGlass.warn("底栏:重试 " + MAX_TRIES + " 次仍未认到微信底栏"
+                                + "（类名=" + WxTabBar.describe(safeDecor(act)) + "）");
+                        return;
+                    }
+                    attempt(act, n + 1);
+                } catch (Throwable t) {
+                    WechatGlass.error("底栏:安装过程出错", t);
+                }
+            }
+        }, n == 0 ? 150L : RETRY_MS);
+    }
+
+    private static View safeDecor(Activity act) {
+        try {
+            return act.getWindow() == null ? null : act.getWindow().getDecorView();
+        } catch (Throwable t) {
+            return null;
+        }
+    }
+
+    private static boolean install(final Activity act) {
+        WechatGlass.setVerbose(DockPrefs.logEnabled(act));
+        if (!DockPrefs.enabled(act)) {
+            // 用户在设置里关掉了：微信原生底栏一概不碰。
+            return true;
+        }
+        final View decor = safeDecor(act);
+        final View content = act.findViewById(android.R.id.content);
+        if (!(decor instanceof ViewGroup) || content == null) return false;
+        if (content.getWidth() < 50 || content.getHeight() < 50) return false;
+
+        ViewGroup bar = WxTabBar.find(decor);
+        if (bar == null) return false;
+
+        List<View> items = WxTabBar.items(bar);
+        if (items.size() < 3) {
+            WechatGlass.warn("底栏:只认出 " + items.size() + " 个导航项，这次不动"
+                    + "（" + WxTabBar.describe(bar) + "）");
+            return false;
+        }
+
+        final Backdrop backdrop = new Backdrop();
+        backdrop.setContent(content);
+        backdrop.setSampleScale();
+
+        final List<View>[] targets = new List[]{new ArrayList<View>(items)};
+        final ViewGroup[] barRef = new ViewGroup[]{bar};
+
+        final IsoDock iso = IsoDock.create(act,
+                new Consumer<String>() {
+                    @Override
+                    public void accept(String message) {
+                        WechatGlass.log("[玻璃] " + message);
+                    }
+                },
+                new IntConsumer() {
+                    @Override
+                    public void accept(int index) {
+                        try {
+                            List<View> list = targets[0];
+                            if (list == null || index < 0 || index >= list.size()) return;
+                            WxTabBar.tap(barRef[0], list.get(index), index);
+                        } catch (Throwable t) {
+                            WechatGlass.warnOnce("iso-tab-click", "转发导航点击失败: " + t);
+                        }
+                    }
+                },
+                new Runnable() {
+                    @Override
+                    public void run() {
+                        // 微信没有「＋」，这个回调用不到。
+                    }
+                },
+                new Runnable() {
+                    @Override
+                    public void run() {
+                        // 长按不作为设置入口。
+                    }
+                });
+
+        if (iso == null) {
+            WechatGlass.warn("底栏:玻璃组件加载失败，保留微信原生底栏");
+            return true;
+        }
+
+        try {
+            ((ViewGroup) decor).addView(iso.view, new FrameLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        } catch (Throwable t) {
+            WechatGlass.error("底栏:玻璃层挂不上窗口", t);
+            iso.dispose();
+            return true;
+        }
+
+        synchronized (OVERLAYS) { OVERLAYS.put(act, iso); }
+        synchronized (BACKDROPS) { BACKDROPS.put(act, backdrop); }
+        synchronized (BARS) { BARS.put(act, bar); }
+        synchronized (ITEMS) { ITEMS.put(act, targets[0]); }
+
+        final boolean[] live = new boolean[]{true};
+        synchronized (LIVE) { LIVE.put(act, Boolean.TRUE); }
+        final int[] lastWindowW = new int[]{decor.getWidth()};
+        final int[] lastWindowH = new int[]{decor.getHeight()};
+        final Rect[] band = new Rect[]{null};
+        final boolean[] shown = new boolean[]{false};
+
+        backdrop.setOnFrame(new Runnable() {
+            @Override
+            public void run() {
+                if (!live[0]) return;
+                pushBackdrop(iso, backdrop);
+            }
+        });
+
+        final Runnable poll = new Runnable() {
+            @Override
+            public void run() {
+                if (!live[0]) return;
+                try {
+                    if (iso.isBroken()) {
+                        live[0] = false;
+                        MAIN.removeCallbacks(this);
+                        teardown(act, "玻璃渲染出错");
+                        WechatGlass.warn("底栏:玻璃渲染出错，已恢复微信原生底栏");
+                        return;
+                    }
+                    if (act.isFinishing() || act.isDestroyed()) {
+                        live[0] = false;
+                        MAIN.removeCallbacks(this);
+                        return;
+                    }
+
+                    // 玻璃层被转场摘掉时挂回去（微信切 tab 一般不重建 decor，兜个底）。
+                    if (!iso.view.isAttachedToWindow() && decor.isAttachedToWindow()) {
+                        ViewParent parent = iso.view.getParent();
+                        if (parent instanceof ViewGroup) ((ViewGroup) parent).removeView(iso.view);
+                        ((ViewGroup) decor).addView(iso.view, new FrameLayout.LayoutParams(
+                                ViewGroup.LayoutParams.MATCH_PARENT,
+                                ViewGroup.LayoutParams.MATCH_PARENT));
+                        WechatGlass.log("底栏:玻璃层已重新挂回主窗口");
+                    }
+
+                    ViewGroup currentBar = barRef[0];
+                    if (currentBar == null || !currentBar.isAttachedToWindow()) {
+                        // 微信重建了底栏：重新认一次，认到就换目标。
+                        ViewGroup fresh = WxTabBar.find(decor);
+                        if (fresh != null) {
+                            List<View> freshItems = WxTabBar.items(fresh);
+                            if (freshItems.size() >= 3) {
+                                barRef[0] = fresh;
+                                targets[0] = new ArrayList<View>(freshItems);
+                                synchronized (BARS) { BARS.put(act, fresh); }
+                                synchronized (ITEMS) { ITEMS.put(act, targets[0]); }
+                                SelfMask.restore(currentBar);
+                                SelfMask.mask(fresh);
+                                currentBar = fresh;
+                                WechatGlass.log("底栏:微信重建了底栏节点，已重新接管");
+                            }
+                        }
+                    }
+
+                    // 窗口尺寸变了（转屏 / 分屏）才重新量位置。
+                    int w = decor.getWidth();
+                    int h = decor.getHeight();
+                    boolean windowChanged = lastWindowW[0] != w || lastWindowH[0] != h;
+                    lastWindowW[0] = w;
+                    lastWindowH[0] = h;
+                    if (band[0] == null || windowChanged) {
+                        band[0] = measureBand(act, currentBar, iso.view, targets[0].size());
+                        synchronized (BANDS) { BANDS.put(act, band[0]); }
+                        if (band[0] != null) applyGeometry(act, iso, backdrop, band[0], targets[0].size());
+                    }
+
+                    // 广播丢了也能兜住：设置页在模块进程，这边用 XSharedPreferences 比版本号。
+                    if (DockPrefs.syncFromModule(act)) {
+                        WechatGlass.log("设置:检测到新配置，重新应用");
+                        band[0] = measureBand(act, currentBar, iso.view, targets[0].size());
+                        if (band[0] != null) {
+                            applyGeometry(act, iso, backdrop, band[0], targets[0].size());
+                        }
+                    }
+
+                    refreshTabs(act, iso, targets[0]);
+
+                    // 原生底栏还在、还有实体，就显示；不然收起来。
+                    boolean wantShow = currentBar != null
+                            && currentBar.isAttachedToWindow()
+                            && currentBar.getVisibility() == View.VISIBLE
+                            && SelfMask.effectiveAlpha(currentBar) > 0.01f
+                            && currentBar.getWidth() > 0;
+
+                    if (wantShow && !shown[0]) {
+                        shown[0] = true;
+                        animate(iso.view, true);
+                        if (!SelfMask.masked(currentBar)) SelfMask.mask(currentBar);
+                    } else if (!wantShow && shown[0]) {
+                        shown[0] = false;
+                        animate(iso.view, false);
+                    }
+
+                    if (band[0] != null) {
+                        backdrop.setRegion(inWindow(iso.view, band[0]));
+                        backdrop.pump();
+                    }
+                    MAIN.postDelayed(this, POLL_MS);
+                } catch (Throwable t) {
+                    WechatGlass.warnOnce("poll-fail", "Dock 轮询出错: " + t);
+                    MAIN.postDelayed(this, POLL_MS);
+                }
+            }
+        };
+
+        synchronized (POLLERS) { POLLERS.put(act, poll); }
+        MAIN.post(poll);
+
+        // 看门狗：玻璃两秒多还没画出来，就把微信原生底栏原样还回去，绝不留下"两条栏都没了"。
+        MAIN.postDelayed(new Runnable() {
+            @Override
+            public void run() {
+                if (!live[0]) return;
+                if (iso.hasDrawn()) return;
+                live[0] = false;
+                MAIN.removeCallbacks(poll);
+                teardown(act, "玻璃两秒内没画出来");
+                WechatGlass.warn("底栏:玻璃没画出来，已恢复微信原生底栏");
+            }
+        }, WATCHDOG_MS);
+
+        return true;
+    }
+
+    // ------------------------------------------------------------ 几何
+
+    /** 原生底栏在窗口里的矩形；量不到就用窗口底部兜一个。 */
+    private static Rect measureBand(Activity act, View bar, View overlay, int count) {
+        Rect rect = null;
+        if (bar != null && bar.isAttachedToWindow() && bar.getWidth() > 0) {
+            rect = inWindow(bar, new Rect(0, 0, bar.getWidth(), bar.getHeight()));
+        }
+        if (rect != null && rect.width() > 0 && rect.height() > 0) return rect;
+
+        int[] loc = new int[2];
+        overlay.getLocationInWindow(loc);
+        int w = overlay.getWidth() > 0 ? overlay.getWidth()
+                : act.getResources().getDisplayMetrics().widthPixels;
+        int h = overlay.getHeight() > 0 ? overlay.getHeight()
+                : act.getResources().getDisplayMetrics().heightPixels;
+        return new Rect(loc[0], loc[1] + h - dp(act, 56), loc[0] + w, loc[1] + h);
+    }
+
+    private static Rect inWindow(View v, Rect local) {
+        int[] loc = new int[2];
+        v.getLocationInWindow(loc);
+        Rect out = new Rect(local);
+        out.offset(loc[0], loc[1]);
+        return out;
+    }
+
+    private static int dp(Activity act, float value) {
+        return (int) (value * act.getResources().getDisplayMetrics().density);
+    }
+
+    /**
+     * 位置算法和 dydock 完全一致：
+     * 胶囊按设置的高度 / 单格宽度算，整组按屏幕宽度居中，底部离手势条留间距。
+     * 微信没有「＋」，所以 plusRect 给空矩形，渲染层自然不画那个圆球。
+     */
+    private static void applyGeometry(Activity act, IsoDock iso, Backdrop backdrop,
+                                      Rect bandRect, int count) {
+        if (iso == null || bandRect == null) return;
+        try {
+            iso.setAppearance(DockPrefs.glassAlpha(act),
+                    DockPrefs.hideGlassBackground(act), DockPrefs.themeMode(act));
+
+            int[] overlayLoc = new int[2];
+            iso.view.getLocationInWindow(overlayLoc);
+
+            float density = act.getResources().getDisplayMetrics().density;
+            int tabs = Math.max(1, count);
+            int bandTop = bandRect.top - overlayLoc[1];
+            int edge = (int) (DockPrefs.sideMarginDp(act) * density);
+            int pill = (int) (DockPrefs.heightDp(act) * density);
+            int tabWidth = (int) (DockPrefs.tabWidthDp(act) * density);
+            int innerPad = (int) (8f * density);
+
+            int tabsWidth = tabWidth * tabs + innerPad;
+            int baseWidth = iso.view.getWidth() > 0 ? iso.view.getWidth() : bandRect.width();
+            if (baseWidth <= 0) baseWidth = bandRect.width();
+            int available = baseWidth - edge * 2;
+            if (tabsWidth > available) {
+                tabsWidth = Math.max((int) (48f * density) * tabs,
+                        Math.min(tabsWidth, available));
+            }
+            if (tabsWidth <= 0) return;
+
+            int left = Math.max(edge, (baseWidth - tabsWidth) / 2);
+            int top = bandTop + bandRect.height()
+                    - (int) (DockPrefs.bottomGapDp(act) * density) - pill;
+
+            // 不许压进系统手势条：全屏页面上量到的 band 会贴到屏幕最底。
+            int overlayHeight = iso.view.getHeight();
+            int navBottom = navigationBarInsetBottom(act);
+            if (overlayHeight > 0 && navBottom > 0) {
+                int limit = overlayHeight - navBottom - (int) (2f * density) - pill;
+                if (top > limit) top = limit;
+            }
+
+            Rect tabsRect = new Rect(left, top, left + tabsWidth, top + pill);
+            Rect plusRect = new Rect(); // 微信没有「＋」
+            int pad = (int) (40f * density);
+            Rect region = new Rect(tabsRect.left - pad, top - pad,
+                    tabsRect.right + pad, top + pill + pad);
+            Rect regionInWindow = new Rect(region);
+            regionInWindow.offset(overlayLoc[0], overlayLoc[1]);
+
+            if (backdrop != null) backdrop.setRegion(regionInWindow);
+            iso.setGeometry(region, tabsRect, plusRect);
+        } catch (Throwable t) {
+            WechatGlass.warnOnce("iso-geometry", "玻璃定位失败: " + t);
+        }
+    }
+
+    private static int navigationBarInsetBottom(Activity act) {
+        try {
+            if (android.os.Build.VERSION.SDK_INT >= 30) {
+                android.view.WindowInsets insets = act.getWindow()
+                        .getDecorView().getRootWindowInsets();
+                if (insets != null) {
+                    android.graphics.Insets bars = insets.getInsets(
+                            android.view.WindowInsets.Type.navigationBars());
+                    if (bars != null) return Math.max(0, bars.bottom);
+                }
+            }
+            int id = act.getResources().getIdentifier("navigation_bar_height", "dimen", "android");
+            if (id > 0) return act.getResources().getDimensionPixelSize(id);
+        } catch (Throwable ignored) {
+        }
+        return 0;
+    }
+
+    // ------------------------------------------------------------ 图标 / 选中态
+
+    private static void refreshTabs(Activity act, IsoDock iso, List<View> items) {
+        if (iso == null || items == null || items.isEmpty()) return;
+        try {
+            boolean showLabels = DockPrefs.showLabels(act);
+            int count = items.size();
+            String[] labels = new String[count];
+            Bitmap[] icons = new Bitmap[count];
+            for (int i = 0; i < count; i++) {
+                View item = items.get(i);
+                String label = WxTabBar.label(item);
+                labels[i] = showLabels ? (label.length() == 0
+                        ? WxTabBar.defaultLabel(i) : label) : "";
+                icons[i] = WxTabBar.drawableToBitmap(WxTabBar.findIcon(item, 0, 6));
+            }
+            int selected = WxTabBar.selectedIndex(items);
+            iso.setTabs(labels, icons, selected < 0 ? 0 : selected);
+        } catch (Throwable t) {
+            WechatGlass.warnOnce("iso-tabs", "同步导航状态失败: " + t);
+        }
+    }
+
+    // ------------------------------------------------------------ 背景与显隐
+
+    private static void pushBackdrop(IsoDock iso, Backdrop backdrop) {
+        Bitmap sampled = backdrop.bitmap();
+        if (sampled == null || sampled.isRecycled() || backdrop.looksBlack()) {
+            iso.clearBackdrop();
+            return;
+        }
+        // 所有权交给玻璃层：它每一帧都会自己复制一份，宿主这边继续用同一块缓冲。
+        iso.setBackdrop(sampled);
+    }
+
+    private static void animate(final View view, final boolean show) {
+        if (view == null) return;
+        try {
+            view.animate().cancel();
+            if (show) {
+                view.setVisibility(View.VISIBLE);
+                view.setAlpha(0f);
+                view.setTranslationY(6f * view.getResources().getDisplayMetrics().density);
+                view.animate().alpha(1f).translationY(0f).setDuration(IN_MS).start();
+            } else {
+                view.animate().alpha(0f)
+                        .translationY(6f * view.getResources().getDisplayMetrics().density)
+                        .setDuration(OUT_MS)
+                        .withEndAction(new Runnable() {
+                            @Override
+                            public void run() {
+                                // alpha=0 的 View 照样吃触摸，收起来就彻底让开，
+                                // 免得在某些机型上挡住微信自己的误触区域。
+                                if (view.getAlpha() < 0.05f) view.setVisibility(View.GONE);
+                            }
+                        }).start();
+            }
+        } catch (Throwable ignored) {
+        }
+    }
+
+    // ------------------------------------------------------------ 设置同步 / 卸载
+
+    static void applySettingsToAll() {
+        List<Activity> acts;
+        synchronized (OVERLAYS) {
+            acts = new ArrayList<Activity>(OVERLAYS.keySet());
+        }
+        for (final Activity act : acts) {
+            try {
+                final IsoDock iso = OVERLAYS.get(act);
+                if (iso == null) continue;
+                if (!DockPrefs.enabled(act)) {
+                    teardown(act, "设置里关掉了");
+                    continue;
+                }
+                final Backdrop backdrop = BACKDROPS.get(act);
+                List<View> items = ITEMS.get(act);
+                int count = items == null ? 4 : items.size();
+                final Rect band = measureBand(act, BARS.get(act), iso.view, count);
+                synchronized (BANDS) { BANDS.put(act, band); }
+                applyGeometry(act, iso, backdrop, band, count);
+                refreshTabs(act, iso, items);
+            } catch (Throwable t) {
+                WechatGlass.warnOnce("settings-apply", "应用设置失败: " + t);
+            }
+        }
+        // 关掉再打开：已经卸载过的页面要重新接管。
+        requestReinstall();
+    }
+
+    /** 设置里重新打开开关：把见过的页面重新接管一遍。 */
+    static void requestReinstall() {
+        List<Activity> acts;
+        synchronized (KNOWN) {
+            acts = new ArrayList<Activity>(KNOWN.keySet());
+        }
+        for (Activity act : acts) {
+            if (!act.isFinishing() && !act.isDestroyed() && !OVERLAYS.containsKey(act)) {
+                attempt(act, 0);
+            }
+        }
+    }
+
+    static void teardown(Activity act, String reason) {
+        if (act == null) return;
+        IsoDock iso;
+        Backdrop backdrop;
+        ViewGroup bar;
+        Runnable poll;
+        synchronized (OVERLAYS) { iso = OVERLAYS.remove(act); }
+        synchronized (BACKDROPS) { backdrop = BACKDROPS.remove(act); }
+        synchronized (BARS) { bar = BARS.remove(act); }
+        synchronized (ITEMS) { ITEMS.remove(act); }
+        synchronized (POLLERS) { poll = POLLERS.remove(act); }
+        synchronized (LIVE) { LIVE.remove(act); }
+        synchronized (BANDS) { BANDS.remove(act); }
+
+        if (poll != null) MAIN.removeCallbacks(poll);
+        if (iso != null) {
+            try {
+                ViewParent parent = iso.view.getParent();
+                if (parent instanceof ViewGroup) ((ViewGroup) parent).removeView(iso.view);
+            } catch (Throwable ignored) {
+            }
+            try {
+                iso.dispose();
+            } catch (Throwable ignored) {
+            }
+        }
+        if (backdrop != null) {
+            try {
+                backdrop.release();
+            } catch (Throwable ignored) {
+            }
+        }
+        if (bar != null) {
+            SelfMask.restore(bar);
+        }
+        if (iso != null || bar != null) {
+            WechatGlass.log("底栏:已卸载（" + reason + "），微信原生底栏恢复");
+        }
+    }
+}
