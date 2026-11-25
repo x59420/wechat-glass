@@ -220,6 +220,9 @@ internal class SettingsState(context: Context) : SettingsModel {
             bottomTransparent.value,
             menuTransparent.value,
             videoTint.value,
+            themeMode.value,
+            glassAlpha.value,
+            hideBackground.value,
         )
     }
 

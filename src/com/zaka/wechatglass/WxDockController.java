@@ -223,6 +223,8 @@ final class WxDockController {
         final int[] lastWindowW = new int[]{decor.getWidth()};
         final int[] lastWindowH = new int[]{decor.getHeight()};
         final Rect[] band = new Rect[]{null};
+        /** 这一次量到的位置是不是来自原生底栏本身（false = 首屏还没布局好时用的兜底）。 */
+        final boolean[] bandFromBar = new boolean[]{false};
         final boolean[] shown = new boolean[]{false};
 
         backdrop.setOnFrame(new Runnable() {
@@ -286,8 +288,13 @@ final class WxDockController {
                     boolean windowChanged = lastWindowW[0] != w || lastWindowH[0] != h;
                     lastWindowW[0] = w;
                     lastWindowH[0] = h;
-                    if (band[0] == null || windowChanged) {
+                    // 首屏布局还没完成时会先用窗口底部兜一个位置（bandFromBar=false）；
+                    // 等原生底栏真正完成布局，必须再量一次，否则 Dock 会一直停在兜底位置。
+                    boolean barReady = currentBar != null
+                            && currentBar.isAttachedToWindow() && currentBar.getWidth() > 0;
+                    if (band[0] == null || windowChanged || (barReady && !bandFromBar[0])) {
                         band[0] = measureBand(act, currentBar, iso.view, targets[0].size());
+                        bandFromBar[0] = barReady;
                         synchronized (BANDS) { BANDS.put(act, band[0]); }
                         if (band[0] != null) applyGeometry(act, iso, backdrop, band[0], targets[0].size());
                     }

@@ -139,7 +139,8 @@ public final class SettingsSync {
     /** 设置界面每改一项就调一次：广播出去 + （兜底）把 prefs 文件设成可读。 */
     static void push(Context context, boolean enabled, boolean showPlus, boolean showLabels,
                      boolean verboseLog, int height, int tabWidth, int sideMargin, int bottomGap,
-                     boolean bottomTransparent, boolean menuTransparent, boolean videoTint) {
+                     boolean bottomTransparent, boolean menuTransparent, boolean videoTint,
+                     int themeMode, int glassAlpha, boolean hideBackground) {
         if (context == null) return;
         try {
             Intent intent = new Intent(ACTION);
@@ -155,6 +156,11 @@ public final class SettingsSync {
             intent.putExtra("bottom_transparent", bottomTransparent);
             intent.putExtra("menu_transparent", menuTransparent);
             intent.putExtra("video_tint", videoTint);
+            // 外观三项以前漏在广播外面，只能等宿主一秒轮询兜底：
+            // 用户在设置里拖透明度会「慢一拍」，看起来就像没生效。
+            intent.putExtra("theme_mode", themeMode);
+            intent.putExtra("glass_alpha", glassAlpha);
+            intent.putExtra("hide_glass_background", hideBackground);
             context.sendBroadcast(intent);
         } catch (Throwable t) {
             WechatGlass.warnOnce("settings-push", "发送设置广播失败: " + t);
