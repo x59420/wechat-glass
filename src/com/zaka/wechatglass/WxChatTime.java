@@ -255,15 +255,24 @@ final class WxChatTime {
                     logged = true;
                     int av = 0;
                     long tv = 0L;
-                    if (children > 0) {
-                        View r = childAt(list, 0);
-                        if (r != null) {
-                            av = avatarOf(r) == null ? 0 : 1;
-                            tv = timeOfRow(list, 0, r);
+                    String rowCls = "-";
+                    String tagCls = "null";
+                    for (int k = 0; k < children; k++) {
+                        View r = childAt(list, k);
+                        if (r == null) continue;
+                        ImageView a = avatarOf(r);
+                        long t = timeOfRow(list, k, r);
+                        if (a != null || t > 0L) {
+                            av = a == null ? 0 : 1;
+                            tv = t;
+                            rowCls = r.getClass().getName();
+                            tagCls = r.getTag() == null ? "null" : r.getTag().getClass().getName();
+                            break;
                         }
                     }
                     WechatGlass.log("聊天时间:list=" + list.getClass().getName()
-                            + " rows=" + children + " avatar=" + av + " time=" + tv);
+                            + " rows=" + children + " avatar=" + av + " time=" + tv
+                            + " row=" + rowCls + " tag=" + tagCls);
                 }
                 for (int i = 0; i < children; i++) {
                     View row = childAt(list, i);
