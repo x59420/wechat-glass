@@ -60,9 +60,6 @@ final class WxTopBar {
 
     static void refresh(final Activity act) {
         if (act == null) return;
-        // 用户要求取消右上角悬浮玻璃：整个顶栏层停用。
-        release(act);
-        if (true) return;
         try {
             if (!WxDockController.isHost(act)) {
                 release(act);
@@ -105,7 +102,6 @@ final class WxTopBar {
      * 「我的界面被加了蒙版」。这里每 600ms 看一眼当前是不是「我」页，是就把层撤掉。
      */
     private static void startWatch(final Activity act) {
-        if (true) return;
         synchronized (WATCHERS) {
             if (WATCHERS.containsKey(act)) return;
         }
@@ -202,7 +198,6 @@ final class WxTopBar {
 
     private static void apply(ViewGroup decor, Activity act) {
         release(act);
-        if (true) return;
         int w = decor.getWidth();
         int h = decor.getHeight();
         if (w < 200 || h < 400) return;
@@ -223,6 +218,11 @@ final class WxTopBar {
         // 聊天页 / 联系人页也挂在同一个 LauncherUI 上，标题会变成联系人名。
         // 这时必须把顶栏层撤掉，否则会盖住聊天页原生标题。
         if (!isMainTabPage(decor, act, density)) {
+            release(act);
+            return;
+        }
+        // 只有顶栏确实压着一层蒙版/渐变/模糊层时才做渐变；没有就完全不碰。
+        if (!hasTopMask(decor, act, density)) {
             release(act);
             return;
         }
@@ -411,13 +411,70 @@ final class WxTopBar {
         }
     }
 
+    /** 顶栏是否有一层可识别的蒙版 / 渐变 / 模糊层；没有就不做处理。 */
+    private static boolean hasTopMask(ViewGroup decor, Activity act, float density) {
+        try {
+            int screenW = decor.getWidth() > 0 ? decor.getWidth()
+                    : act.getResources().getDisplayMetrics().widthPixels;
+            int limitY = statusBarHeight(act) + (int) (74 * density);
+            ArrayDeque<View> queue = new ArrayDeque<View>();
+            IdentityHashMap<View, Boolean> seen = new IdentityHashMap<View, Boolean>();
+            queue.add(decor);
+            int[] loc = new int[2];
+            int budget = 20000;
+            while (!queue.isEmpty() && budget-- > 0) {
+                View v = queue.poll();
+                if (v == null || seen.put(v, Boolean.TRUE) != null) continue;
+                if (v instanceof ViewGroup) {
+                    ViewGroup g = (ViewGroup) v;
+                    for (int i = 0; i < g.getChildCount(); i++) {
+                        View c = g.getChildAt(i);
+                        if (c != null && !(c instanceof TopLayer)) queue.add(c);
+                    }
+                }
+                if (v instanceof TopLayer || !v.isShown()
+                        || v.getWidth() <= 0 || v.getHeight() <= 0) continue;
+                v.getLocationInWindow(loc);
+                if (loc[1] > limitY) continue;
+                String n = v.getClass().getName().toLowerCase();
+                if (n.contains("mask") || n.contains("blur")
+                        || n.contains("gradient") || n.contains("shadow")) {
+                    WechatGlass.log("顶栏:检测到蒙版 " + v.getClass().getName());
+                    return true;
+                }
+                float alpha = v.getAlpha();
+                if (alpha > 0.01f && alpha < 0.99f
+                        && v.getWidth() > screenW * 0.5f
+                        && v.getHeight() < (int) (80 * density)) {
+                    WechatGlass.log("顶栏:检测到半透明蒙版 alpha=" + alpha);
+                    return true;
+                }
+                Drawable bg = v.getBackground();
+                if (bg instanceof android.graphics.drawable.ColorDrawable
+                        && v.getWidth() > screenW * 0.5f) {
+                    int color = ((android.graphics.drawable.ColorDrawable) bg).getColor();
+                    int a = (color >>> 24) & 0xFF;
+                    if (a > 0 && a < 255) {
+                        WechatGlass.log("顶栏:检测到半透明底色 a=" + a);
+                        return true;
+                    }
+                }
+            }
+        } catch (Throwable ignored) {
+        }
+        WechatGlass.log("顶栏:没有蒙版，跳过");
+        return false;
+    }
+
     /** 只有微信 / 通讯录 / 发现三个主 tab 才画顶栏。 */
     private static boolean isMainTabPage(ViewGroup decor, Activity act, float density) {
         View title = findTitleView(decor, act, density);
         if (!(title instanceof android.widget.TextView)) return false;
         CharSequence text = ((android.widget.TextView) title).getText();
         if (text == null) return false;
-        String value = text.toString().trim();
+        String value = text.toString().trim()
+                .replaceAll("\\s*\\(\\d+\\)\\s*$", "")
+                .replaceAll("\\s+\\d+$", "").trim();
         return value.equals("微信") || value.equals("通讯录") || value.equals("发现")
                 || value.equals("WeChat") || value.equals("Chats")
                 || value.equals("Contacts") || value.equals("Discover");

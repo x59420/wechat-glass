@@ -514,6 +514,7 @@ final class WxPlusPage {
                     boolean surfaceDark = dark || hasLightText(content, 0);
                     GlassDrawable glass = new GlassDrawable(20 * density, surfaceDark, true);
                     content.setBackground(glass);
+                    attachPopupBackdrop(content, glass);
                     // 菜单本身内容不多，固定高度即可，不要出现滚动条。
                     content.setVerticalScrollBarEnabled(false);
                     content.setOverScrollMode(View.OVER_SCROLL_NEVER);
@@ -596,14 +597,19 @@ final class WxPlusPage {
             final View decor = act.getWindow().getDecorView();
             final Rect rect = new Rect();
             int[] loc = new int[2];
-            content.getLocationInWindow(loc);
+            int[] decorLoc = new int[2];
+            content.getLocationOnScreen(loc);
+            decor.getLocationOnScreen(decorLoc);
             float scale = 1f / 3f;
             rect.set(0, 0, Math.max(1, (int) (content.getWidth() * scale)),
                     Math.max(1, (int) (content.getHeight() * scale)));
             final Bitmap shot = Bitmap.createBitmap(rect.width(), rect.height(),
                     Bitmap.Config.ARGB_8888);
-            final Rect src = new Rect(loc[0], loc[1],
-                    loc[0] + content.getWidth(), loc[1] + content.getHeight());
+            // PixelCopy 用的是宿主窗口坐标，弹层自己 getLocationInWindow 是弹层窗口坐标，
+            // 直接拿来会整体错位；先换成屏幕坐标，再减宿主窗口自己的屏幕原点。
+            final Rect src = new Rect(loc[0] - decorLoc[0], loc[1] - decorLoc[1],
+                    loc[0] - decorLoc[0] + content.getWidth(),
+                    loc[1] - decorLoc[1] + content.getHeight());
             android.view.PixelCopy.request(act.getWindow(), src, shot,
                     new android.view.PixelCopy.OnPixelCopyFinishedListener() {
                         @Override
