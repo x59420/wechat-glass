@@ -2,7 +2,7 @@
 
 面向微信 Android 客户端的 LSPosed 模块：把微信底部导航栏换成悬浮液态玻璃 Dock。
 
-> 当前版本：**0.8.2**（versionCode 48）
+> 当前版本：**0.8.4**（versionCode 50）
 >
 > 玻璃渲染移植自 [KernelSU](https://github.com/tiann/KernelSU) 管理器的悬浮底栏
 > （Compose + Miuix 的 `drawBackdrop` / `lens` / `vibrancy`）。
@@ -103,6 +103,15 @@ ANDROID_HOME=/path/to/android-sdk bash build.sh
 - `versionCode` 必须大于设备上已装版本，否则 Android 会拒绝降级安装。
 - `keystore/wxglass.jks` 必须一直使用同一份，换了就不能覆盖安装。
 - release 使用 R8（`isMinifyEnabled = true`、`isShrinkResources = true`）。
+
+---
+
+## 参考实现
+
+新增功能前先看 [REFERENCES.md](REFERENCES.md)：
+
+- 官方微信液态玻璃 UI（`WeChatBlurBar` / `GlassRenderer` / `ChatBubbleStyler`）
+- `lovkem1/OKK`
 
 ---
 
