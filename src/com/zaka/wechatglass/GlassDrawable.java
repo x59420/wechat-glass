@@ -67,7 +67,7 @@ final class GlassDrawable extends Drawable {
         if (backdrop != null && !backdrop.isRecycled()) {
             dst.set(bounds);
             // 弹层里要放文字：背景图只留一点点，别跟字抢。
-            imagePaint.setAlpha(dense ? 90 : 255);
+            imagePaint.setAlpha(dense ? 55 : 255);
             canvas.drawBitmap(backdrop, null, dst, imagePaint);
             imagePaint.setAlpha(255);
         }
@@ -76,7 +76,7 @@ final class GlassDrawable extends Drawable {
         // dense：实底。浅色模式接近纯白 + 一点冷调，深色模式一块深灰蓝，
         // 不管背后是聊天列表还是图片，字都压得住。
         if (dense) {
-            surfacePaint.setColor(dark ? 0xF21A1C22 : 0xF7FFFFFF);
+            surfacePaint.setColor(dark ? 0xFF1A1C22 : 0xFFFFFFFF);
         } else {
             surfacePaint.setColor(dark ? 0x59101318 : 0x59FFFFFF);
         }

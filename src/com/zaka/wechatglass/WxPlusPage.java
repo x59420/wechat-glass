@@ -619,13 +619,7 @@ final class WxPlusPage {
     }
 
     private static boolean isDark(Context ctx) {
-        try {
-            return (ctx.getResources().getConfiguration().uiMode
-                    & android.content.res.Configuration.UI_MODE_NIGHT_MASK)
-                    == android.content.res.Configuration.UI_MODE_NIGHT_YES;
-        } catch (Throwable t) {
-            return false;
-        }
+        return WxTheme.isDark(ctx);
     }
 
     /** 面板里那一行的按压底色（微信自己是灰的，这里给个淡一点的）。 */

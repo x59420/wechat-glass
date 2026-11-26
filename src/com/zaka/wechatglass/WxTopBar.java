@@ -245,6 +245,8 @@ final class WxTopBar {
         if (layer == null || layer.getParent() == null) {
             layer = addLayer(decor, act);
             if (layer == null) return;
+        } else {
+            layer.bringToFront();
         }
         layer.setBandBottom(bandBottomOf(decor, act, density));
         layer.setTitleView(findTitleView(decor, act, density));
@@ -259,17 +261,21 @@ final class WxTopBar {
      */
     private static int bandBottomOf(View decor, Activity act, float density) {
         int bottom = titleBottom(decor, act, density);
-        if (bottom > 0) return bottom + (int) (6 * density);
-        return statusBarHeight(act) + (int) (50 * density);
+        if (bottom > 0) return bottom;
+        return statusBarHeight(act) + (int) (44 * density);
     }
 
     /** 建那层全屏透明的顶栏覆盖层（已经存在就复用）。 */
     private static TopLayer addLayer(ViewGroup decor, Activity act) {
         TopLayer layer = new TopLayer(act.getApplicationContext());
         try {
+            // 顶栏图标和胶囊必须压在微信自己的标题栏之上，不能被它的 actionBar/elevation 盖住。
+            layer.setElevation(1000f);
+            layer.setTranslationZ(1000f);
             decor.addView(layer, new ViewGroup.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT,
                     ViewGroup.LayoutParams.MATCH_PARENT));
+            layer.bringToFront();
         } catch (Throwable t) {
             WechatGlass.warnOnce("topbar-add", "顶栏玻璃层挂不上: " + t);
             return null;
@@ -287,23 +293,29 @@ final class WxTopBar {
     }
 
     private static boolean isDark(Activity act) {
-        try {
-            return (act.getResources().getConfiguration().uiMode
-                    & android.content.res.Configuration.UI_MODE_NIGHT_MASK)
-                    == android.content.res.Configuration.UI_MODE_NIGHT_YES;
-        } catch (Throwable t) {
-            return false;
-        }
+        return WxTheme.isDark(act);
     }
 
     /** 「我」tab 是否为当前页。 */
     private static boolean isMeTab(ViewGroup decor, Activity act) {
         try {
             ViewGroup bar = WxTabBar.find(decor, act);
-            if (bar == null) return false;
-            List<View> items = WxTabBar.items(bar);
-            if (items == null || items.size() < 4) return false;
-            return WxTabBar.selectedIndex(items) == 3;
+            if (bar != null) {
+                List<View> items = WxTabBar.items(bar);
+                if (items != null && items.size() >= 4
+                        && WxTabBar.selectedIndex(items) == 3) return true;
+            }
+            // 兜底：底栏选中项读不到时，标题是「我 / Me / Profile」也一律不碰。
+            View title = findTitleView(decor, act,
+                    act.getResources().getDisplayMetrics().density);
+            if (title instanceof android.widget.TextView) {
+                CharSequence text = ((android.widget.TextView) title).getText();
+                if (text != null) {
+                    String value = text.toString().trim();
+                    return value.equals("我") || value.equals("Me") || value.equals("Profile");
+                }
+            }
+            return false;
         } catch (Throwable t) {
             return false;
         }
@@ -341,8 +353,9 @@ final class WxTopBar {
                 if (text == null) continue;
                 String value = text.toString().trim();
                 if (value.equals("微信") || value.equals("通讯录") || value.equals("发现")
-                        || value.equals("WeChat") || value.equals("Chats")
-                        || value.equals("Contacts") || value.equals("Discover")) {
+                        || value.equals("我") || value.equals("WeChat") || value.equals("Chats")
+                        || value.equals("Contacts") || value.equals("Discover")
+                        || value.equals("Me") || value.equals("Profile")) {
                     return v;
                 }
             }
@@ -543,8 +556,7 @@ final class WxTopBar {
         private void grabTop() {
             View root = contentRoot;
             if (root == null || root.getWidth() <= 0 || root.getHeight() <= 0) return;
-            int bandH = Math.min(root.getHeight(),
-                    Math.max(dp(110), scrimBounds.height() + dp(14)));
+            int bandH = Math.min(root.getHeight(), scrimBounds.height());
             if (bandH <= 2) return;
             float scale = Math.max(1f / 16f,
                     Math.min(1f / 4f, 130f / Math.max(1, root.getWidth())));
@@ -609,7 +621,7 @@ final class WxTopBar {
             // 渐变模糊带：底边 = 标题栏底边，往上一直淡到屏幕顶端。
             // 之前是「胶囊下沿再往下散」，所以模糊会糊到内容区，位置也是错的。
             int bandBottom = bandBottomWindow > 0 ? bandBottomWindow - self[1]
-                    : statusBarHeight(act) + dp(50);
+                    : statusBarHeight(act) + dp(44);
             scrimBounds.set(0, 0, getWidth(), Math.max(0, bandBottom));
             invalidate();
 
@@ -729,7 +741,7 @@ final class WxTopBar {
             int[] self = new int[2];
             getLocationInWindow(self);
             int bandBottom = bandBottomWindow > 0 ? bandBottomWindow - self[1]
-                    : statusBarHeight(host) + dp(50);
+                    : statusBarHeight(host) + dp(44);
             scrimBounds.set(0, 0, getWidth(), Math.max(0, bandBottom));
             invalidate();
         }
@@ -792,12 +804,12 @@ final class WxTopBar {
             // 再用 alpha 渐变让它从上往下自然淡出。
             if (scrimBounds.width() <= 0 && getWidth() > 0) {
                 scrimBounds.set(0, 0, getWidth(),
-                        Math.max(statusBarHeight(host) + dp(64), dp(80)));
+                        Math.max(statusBarHeight(host) + dp(44), dp(64)));
             }
             if (scrimBounds.height() > 0) {
                 if (topSample != null && !topSample.isRecycled()) {
                     scrimDst.set(0, 0, getWidth(),
-                            Math.min(getHeight(), scrimBounds.height() + dp(10)));
+                            Math.min(getHeight(), scrimBounds.height()));
                     canvas.drawBitmap(topSample, null, scrimDst, topPaint);
                 }
                 // 再压一层很淡的雾，纯白 / 纯黑背景上也有层次，但不会糊住标题。
@@ -853,9 +865,20 @@ final class WxTopBar {
 
         private Bitmap iconBitmap(View v) {
             try {
-                if (!(v instanceof ImageView)) return null;
-                Drawable d = ((ImageView) v).getDrawable();
-                return WxTabBar.drawableToBitmap(d);
+                if (v instanceof ImageView) {
+                    Drawable d = ((ImageView) v).getDrawable();
+                    Bitmap b = WxTabBar.drawableToBitmap(d);
+                    if (b != null) return b;
+                }
+                // 有些微信版本把图标包在 ImageButton / TextView / FrameLayout 里。
+                // 直接把这个原生 View 画成位图，保证胶囊里至少看得见原来的图标。
+                int w = v.getWidth();
+                int h = v.getHeight();
+                if (w <= 0 || h <= 0) return null;
+                Bitmap b = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888);
+                Canvas c = new Canvas(b);
+                v.draw(c);
+                return b;
             } catch (Throwable t) {
                 return null;
             }

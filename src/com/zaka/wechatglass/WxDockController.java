@@ -132,11 +132,37 @@ final class WxDockController {
         try {
             String name = act.getClass().getName();
             if (name.endsWith("LauncherUI")) return true;
+            // 聊天页 / 添加朋友页就算窗口里刚好还留着底栏节点，也绝不能当首页。
+            if (isBlockedPage(act)) return false;
             // 类名对不上也不能直接放弃：这条窗口里真有微信那条底栏，就是首页。
             return WxTabBar.hasTabBar(act);
         } catch (Throwable t) {
             return false;
         }
+    }
+
+    /** 明确不该显示 Dock 的页面：聊天、聊天室、添加朋友 / 更多。 */
+    static boolean isBlockedPage(Activity act) {
+        if (act == null) return false;
+        try {
+            String name = act.getClass().getName().toLowerCase(java.util.Locale.ROOT);
+            return name.contains("chatting")
+                    || name.contains("chatroom")
+                    || name.contains("findmorefriends")
+                    || name.contains("addmorefriends")
+                    || name.contains("moretabui");
+        } catch (Throwable t) {
+            return false;
+        }
+    }
+
+    /** 立刻收起所有首页上的 Dock，不等轮询。 */
+    private static void hideAll() {
+        java.util.List<Activity> acts;
+        synchronized (OVERLAYS) {
+            acts = new java.util.ArrayList<Activity>(OVERLAYS.keySet());
+        }
+        for (Activity a : acts) hideNow(a);
     }
 
     static void onHostResume(final Activity act) {
@@ -178,6 +204,11 @@ final class WxDockController {
         if (act == null) return;
         TOP = act;
         synchronized (RESUMED_AT) { RESUMED_AT.put(act, SystemClock.uptimeMillis()); }
+        if (isBlockedPage(act)) {
+            // 聊天页 / 添加朋友页一出现，先把首页的 Dock 收掉，别等下一次轮询。
+            hideAll();
+            return;
+        }
         if (isHost(act)) onHostResume(act);
     }
 
@@ -501,7 +532,8 @@ final class WxDockController {
                     Activity top = resumed != null ? resumed : TOP;
                     boolean otherOnTop = top != null && top != act
                             && !top.isFinishing() && !top.isDestroyed();
-                    boolean active = !otherOnTop;
+                    boolean blocked = top != null && isBlockedPage(top);
+                    boolean active = !otherOnTop && !blocked;
                     boolean covered;
                     synchronized (COVERED) {
                         Boolean flag = COVERED.get(act);
@@ -543,7 +575,11 @@ final class WxDockController {
                     } else if (visible || iso.view().getVisibility() == View.VISIBLE) {
                         shown[0] = false;
                         hideNow(act);
-                        if (top != null && top != act) {
+                        if (blocked) {
+                            WechatGlass.warnOnce("dock-hide-blocked-" + top.getClass().getName(),
+                                    "底栏:聊天/添加朋友页在前台（"
+                                            + top.getClass().getSimpleName() + "），已收起");
+                        } else if (top != null && top != act) {
                             // 让日志说清楚是谁把 Dock 顶掉的，下次看日志就知道判断链对不对。
                             WechatGlass.warnOnce("dock-hide-" + top.getClass().getName(),
                                     "底栏:前台是 " + top.getClass().getSimpleName() + "，已收起");

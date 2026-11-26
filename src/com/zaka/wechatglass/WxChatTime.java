@@ -109,9 +109,12 @@ final class WxChatTime {
             View decor = act.getWindow() == null ? null : act.getWindow().getDecorView();
             if (!(decor instanceof ViewGroup)) return;
             Layer layer = new Layer(act);
+            layer.setElevation(1000f);
+            layer.setTranslationZ(1000f);
             ((ViewGroup) decor).addView(layer, new ViewGroup.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT,
                     ViewGroup.LayoutParams.MATCH_PARENT));
+            layer.bringToFront();
             synchronized (LAYERS) {
                 LAYERS.put(act, layer);
             }
@@ -195,13 +198,7 @@ final class WxChatTime {
         }
 
         private boolean isNight() {
-            try {
-                int mode = getResources().getConfiguration().uiMode
-                        & Configuration.UI_MODE_NIGHT_MASK;
-                return mode == Configuration.UI_MODE_NIGHT_YES;
-            } catch (Throwable t) {
-                return false;
-            }
+            return WxTheme.isDark(host);
         }
 
         void stop() {

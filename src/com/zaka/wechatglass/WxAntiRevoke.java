@@ -55,51 +55,65 @@ final class WxAntiRevoke {
         WechatGlass.log("防撤回:已挂上 " + count + " 个落库入口");
     }
 
-    /** 挂一个类里所有 (String table, ContentValues values, ...) 形态的 update。 */
+    /** 挂一个类（含父类）里所有 (String table, ContentValues values, ...) 形态的 update。 */
     private static int hookUpdate(Class<?> cls, final String methodName) {
         int count = 0;
-        Method[] methods;
-        try {
-            methods = cls.getDeclaredMethods();
-        } catch (Throwable t) {
-            return 0;
-        }
-        for (Method method : methods) {
+        java.util.IdentityHashMap<Method, Boolean> seen =
+                new java.util.IdentityHashMap<Method, Boolean>();
+        for (Class<?> c = cls; c != null; c = c.getSuperclass()) {
+            Method[] methods;
             try {
-                if (!method.getName().equals(methodName)) continue;
-                Class<?>[] types = method.getParameterTypes();
-                if (types.length < 2) continue;
-                if (types[0] != String.class) continue;
-                if (!ContentValues.class.isAssignableFrom(types[1])) continue;
-                XposedBridge.hookMethod(method, new XC_MethodHook() {
-                    @Override
-                    protected void beforeHookedMethod(MethodHookParam param) {
-                        try {
-                            if (param.args.length < 2) return;
-                            if (!(param.args[0] instanceof String)) return;
-                            if (!(param.args[1] instanceof ContentValues)) return;
-                            ContentValues values = (ContentValues) param.args[1];
-                            Context context = WechatGlass.context();
-                            if (context != null && !DockPrefs.antiRevoke(context)) return;
-                            String table = (String) param.args[0];
-                            String content = asString(values.get("content"));
-                            if (!isRevokeText(content)) return;
-                            // 自己撤回（"你撤回了一条消息"）放行。
-                            if (content.trim().startsWith("你")) return;
-                            param.setResult(0);
-                            blocked++;
-                            WechatGlass.log("防撤回:拦下一条（表=" + table + " 内容="
-                                    + brief(content) + "）累计 " + blocked);
-                        } catch (Throwable t) {
-                            WechatGlass.warnOnce("revoke-" + methodName,
-                                    "防撤回:判断失败（放行）: " + t);
-                        }
-                    }
-                });
-                count++;
+                methods = c.getDeclaredMethods();
             } catch (Throwable t) {
-                WechatGlass.warnOnce("revoke-method-" + methodName,
-                        "防撤回:挂 " + methodName + " 失败: " + t);
+                continue;
+            }
+            for (Method method : methods) {
+                try {
+                    if (!method.getName().equals(methodName)) continue;
+                    if (seen.put(method, Boolean.TRUE) != null) continue;
+                    Class<?>[] types = method.getParameterTypes();
+                    if (types.length < 2) continue;
+                    if (types[0] != String.class) continue;
+                    if (!ContentValues.class.isAssignableFrom(types[1])) continue;
+                    XposedBridge.hookMethod(method, new XC_MethodHook() {
+                        @Override
+                        protected void beforeHookedMethod(MethodHookParam param) {
+                            try {
+                                if (param.args.length < 2) return;
+                                if (!(param.args[0] instanceof String)) return;
+                                if (!(param.args[1] instanceof ContentValues)) return;
+                                ContentValues values = (ContentValues) param.args[1];
+                                Context context = WechatGlass.context();
+                                if (context != null && !DockPrefs.antiRevoke(context)) return;
+                                String table = (String) param.args[0];
+                                String content = null;
+                                // 微信不同版本把正文放在 content / msgContent，甚至别的列；
+                                // 只要这次 update 里任何一个字符串像撤回文案，就拦。
+                                for (String key : values.keySet()) {
+                                    String v = asString(values.get(key));
+                                    if (isRevokeText(v)) {
+                                        content = v;
+                                        break;
+                                    }
+                                }
+                                if (content == null) return;
+                                // 自己撤回（"你撤回了一条消息"）放行。
+                                if (content.trim().startsWith("你")) return;
+                                param.setResult(0);
+                                blocked++;
+                                WechatGlass.log("防撤回:拦下一条（表=" + table + " 内容="
+                                        + brief(content) + "）累计 " + blocked);
+                            } catch (Throwable t) {
+                                WechatGlass.warnOnce("revoke-" + methodName,
+                                        "防撤回:判断失败（放行）: " + t);
+                            }
+                        }
+                    });
+                    count++;
+                } catch (Throwable t) {
+                    WechatGlass.warnOnce("revoke-method-" + methodName,
+                            "防撤回:挂 " + methodName + " 失败: " + t);
+                }
             }
         }
         return count;
