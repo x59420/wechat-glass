@@ -213,20 +213,21 @@ final class WxTopBar {
             union.bottom = Math.max(union.bottom, loc[1] + v.getHeight());
         }
 
-        // 胶囊几何跟 Dock 一个比例：高度直接取 Dock 的高度（默认 64dp），
-        // 圆角 = 高度的一半（GlassCapsule 里 pillShape 就是这个算法），
-        // 所以看着和底下那条是同一种「胶囊」。
-        // 图标本身不动 —— 胶囊只是套在原来那两颗图标的位置上。
-        int padH = (int) (18 * density);
-        int dockHeight = (int) (DockPrefs.heightDp(act) * density);
-        int capsuleH = Math.max((int) (44 * density), dockHeight);
+        // 胶囊几何按「原位」来：高度跟着那颗图标走（图标高 + 上下各留 9dp），
+        // 不跟 Dock 对齐 —— 标题栏就那么高，硬塞一个 64dp 的大胶囊反而不协调。
+        // 圆角仍然是高度的一半，所以观感和 Dock 是同一种「胶囊」。
+        // 图标本身不动，胶囊只是套在原来那两颗图标的位置上。
+        int padH = (int) (14 * density);
+        int padV = (int) (9 * density);
+        int minH = (int) (34 * density);
+        int maxH = (int) (48 * density);
         Rect capsule = new Rect();
         if (union.width() > 0 && union.height() > 0) {
+            int capsuleH = Math.max(minH, Math.min(maxH, union.height() + padV * 2));
             int cy = (union.top + union.bottom) / 2;
             int top = cy - capsuleH / 2;
             int statusBar = statusBarHeight(act);
             if (top < statusBar) top = statusBar;
-            // 别往下压到内容区：标题栏底边之上就停。
             int limit = bandBottomOf(decor, act, density);
             int bottom = top + capsuleH;
             if (bottom > limit) {
@@ -477,16 +478,39 @@ final class WxTopBar {
         /** 渐变带底边（窗口坐标）；0 = 还不知道，先按默认算。 */
         private int bandBottomWindow;
 
-        /** 顶栏那条模糊的刷新节奏：只抓窄窄一条，300ms 一次足够。 */
+        /** 渐变那条要不要重采样：只有页面滚动 / 布局变化时才置 true。 */
+        private boolean bandDirty = true;
+        private long lastGrabAt;
+        private View watchedRoot;
+        private final android.view.ViewTreeObserver.OnScrollChangedListener scrollWatcher =
+                new android.view.ViewTreeObserver.OnScrollChangedListener() {
+                    @Override
+                    public void onScrollChanged() {
+                        bandDirty = true;
+                    }
+                };
+
+        /**
+         * 顶栏那条模糊的刷新节奏。
+         *
+         * 以前是每 300ms 无条件把整棵内容树软件重绘进位图 —— 首页越复杂越卡，
+         * 用户直接反馈「渐变模糊很卡顿」。现在只在页面滚动过、或者兜底 1.2 秒到点时
+         * 才重画一次；静着不动的时候一次都不画。
+         */
         private final Runnable topCapture = new Runnable() {
             @Override
             public void run() {
                 if (!active) return;
                 try {
-                    grabTop();
+                    long now = SystemClock.uptimeMillis();
+                    if (bandDirty || now - lastGrabAt >= 1200L) {
+                        bandDirty = false;
+                        lastGrabAt = now;
+                        grabTop();
+                    }
                 } catch (Throwable ignored) {
                 }
-                postDelayed(this, 300L);
+                postDelayed(this, 320L);
             }
         };
 
@@ -570,11 +594,14 @@ final class WxTopBar {
 
             View content = act.findViewById(android.R.id.content);
             if (content != contentRoot) {
+                detachScrollWatcher();
                 contentRoot = content;
+                attachScrollWatcher(content);
                 if (topSample != null) {
                     topSample.recycle();
                     topSample = null;
                 }
+                bandDirty = true;
             }
 
             int[] self = new int[2];
@@ -657,8 +684,30 @@ final class WxTopBar {
             }
         }
 
+        private void attachScrollWatcher(View content) {
+            try {
+                if (content == null) return;
+                watchedRoot = content;
+                content.getViewTreeObserver().addOnScrollChangedListener(scrollWatcher);
+            } catch (Throwable ignored) {
+            }
+        }
+
+        private void detachScrollWatcher() {
+            try {
+                if (watchedRoot != null && watchedRoot.getViewTreeObserver().isAlive()) {
+                    watchedRoot.getViewTreeObserver().removeOnScrollChangedListener(scrollWatcher);
+                }
+            } catch (Throwable ignored) {
+            }
+            watchedRoot = null;
+        }
+
         void setBandBottom(int windowY) {
-            if (windowY > 0) bandBottomWindow = windowY;
+            if (windowY > 0 && windowY != bandBottomWindow) {
+                bandBottomWindow = windowY;
+                bandDirty = true;
+            }
         }
 
         /** 已经包住原生图标了（不是那种只画渐变的空壳）。 */
@@ -689,6 +738,7 @@ final class WxTopBar {
 
         void releaseAll() {
             setActive(false);
+            detachScrollWatcher();
             releaseNatives();
             glass.release();
             if (topSample != null) {

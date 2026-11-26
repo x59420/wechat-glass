@@ -53,6 +53,17 @@ final class GlassCapsule extends View {
     private Bitmap sample;
     private boolean active;
     private long lastCapture;
+    /** 只有页面滚了 / 布局变了才重新采样：每 400ms 无条件重画整棵页面是卡顿的根源。 */
+    private boolean dirty = true;
+    private long lastForceAt;
+    private View watchedRoot;
+    private final android.view.ViewTreeObserver.OnScrollChangedListener scrollWatcher =
+            new android.view.ViewTreeObserver.OnScrollChangedListener() {
+                @Override
+                public void onScrollChanged() {
+                    dirty = true;
+                }
+            };
     private final Rect captureBand = new Rect();
 
     GlassCapsule(Context context) {
@@ -67,11 +78,14 @@ final class GlassCapsule extends View {
     void bind(Activity activity, Rect regionInWindow) {
         View content = activity == null ? null : activity.findViewById(android.R.id.content);
         if (content != contentRoot) {
+            detachScrollWatcher();
             contentRoot = content;
+            attachScrollWatcher(content);
             if (sample != null) {
                 sample.recycle();
                 sample = null;
             }
+            dirty = true;
         }
         setRegion(regionInWindow);
     }
@@ -84,6 +98,7 @@ final class GlassCapsule extends View {
         capsule.set(regionInWindow.left - self[0], regionInWindow.top - self[1],
                 regionInWindow.right - self[0], regionInWindow.bottom - self[1]);
         if (pillShape) radius = capsule.height() / 2f;
+        dirty = true;
         invalidate();
     }
 
@@ -106,6 +121,7 @@ final class GlassCapsule extends View {
         main.removeCallbacks(capture);
         if (value) {
             lastCapture = 0L;
+            dirty = true;
             main.post(capture);
         }
     }
@@ -117,6 +133,7 @@ final class GlassCapsule extends View {
     void release() {
         active = false;
         main.removeCallbacks(capture);
+        detachScrollWatcher();
         if (sample != null) {
             sample.recycle();
             sample = null;
@@ -126,12 +143,37 @@ final class GlassCapsule extends View {
 
     // ------------------------------------------------------------ 采样
 
+    /** 页面滚动 / 布局变化时把「该重画了」的标记打上。 */
+    private void attachScrollWatcher(View content) {
+        try {
+            if (content == null) return;
+            watchedRoot = content;
+            content.getViewTreeObserver().addOnScrollChangedListener(scrollWatcher);
+        } catch (Throwable ignored) {
+        }
+    }
+
+    private void detachScrollWatcher() {
+        try {
+            if (watchedRoot != null && watchedRoot.getViewTreeObserver().isAlive()) {
+                watchedRoot.getViewTreeObserver().removeOnScrollChangedListener(scrollWatcher);
+            }
+        } catch (Throwable ignored) {
+        }
+        watchedRoot = null;
+    }
+
     private final Runnable capture = new Runnable() {
         @Override
         public void run() {
             if (!active) return;
             long now = android.os.SystemClock.uptimeMillis();
-            if (now - lastCapture >= CAPTURE_MS) {
+            // 只在「页面滚过 / 布局变了」或者兜底 1.2 秒到点时重画一次。
+            // 以前是无条件每 400ms 把整棵内容树软件重绘一遍 —— 首页越复杂越卡。
+            boolean force = now - lastForceAt >= 1200L;
+            if (dirty || force) {
+                dirty = false;
+                lastForceAt = now;
                 lastCapture = now;
                 try {
                     grab();
