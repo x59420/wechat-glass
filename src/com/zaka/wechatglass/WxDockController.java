@@ -721,9 +721,22 @@ final class WxDockController {
                         CharSequence cs = ((android.widget.TextView) v).getText();
                         if (cs != null) {
                             String t = cs.toString().trim();
+                            if (t.equals("微信") || t.equals("通讯录") || t.equals("发现")
+                                    || t.equals("我") || t.equals("WeChat")
+                                    || t.equals("Chats") || t.equals("Contacts")
+                                    || t.equals("Discover") || t.equals("Me")) {
+                                continue;
+                            }
                             if (t.equals("添加朋友") || t.equals("发起群聊")
                                     || t.equals("选择联系人") || t.equals("新的朋友")
-                                    || t.equals("群聊")) return true;
+                                    || t.equals("群聊") || t.equals("微信支付")
+                                    || t.equals("微信团队") || t.equals("微信运动")) return true;
+                            // 顶部居中的二级页标题：微信支付 / 服务号 / 公众号文章…
+                            int screenW = root.getResources().getDisplayMetrics().widthPixels;
+                            if (loc[0] > screenW * 0.22f && loc[0] < screenW * 0.78f
+                                    && t.length() > 0 && t.length() <= 16) {
+                                return true;
+                            }
                         }
                     }
                 }
