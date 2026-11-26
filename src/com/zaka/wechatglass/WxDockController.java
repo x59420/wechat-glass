@@ -47,7 +47,7 @@ final class WxDockController {
     private static final int MAX_TRIES = 60;
     private static final long RETRY_MS = 350L;
     /** 玻璃多久没画出来就认为失败，把原生底栏还回去。 */
-    private static final long WATCHDOG_MS = 2600L;
+    private static final long WATCHDOG_MS = 9000L;
     /** 显示 / 隐藏的过渡，和 dydock 一致：150ms / 110ms。 */
     private static final long IN_MS = 150L;
     private static final long OUT_MS = 110L;
