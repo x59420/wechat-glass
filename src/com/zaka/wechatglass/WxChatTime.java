@@ -41,6 +41,9 @@ import de.robv.android.xposed.XposedHelpers;
  */
 final class WxChatTime {
 
+    /** 用户已取消头像时间功能。 */
+    static final boolean DISABLED = true;
+
     /** 已知的聊天页类名，挂上 pause/destroy 用来及时摘掉浮层。 */
     private static final String[] CHAT_ACTIVITIES = {
             "com.tencent.mm.ui.chatting.ChattingUI",
@@ -55,7 +58,7 @@ final class WxChatTime {
     }
 
     static void hook(ClassLoader cl) {
-        if (hooked) return;
+        if (DISABLED || hooked) return;
         hooked = true;
         int count = 0;
         for (String name : CHAT_ACTIVITIES) {
@@ -96,7 +99,7 @@ final class WxChatTime {
 
     /** 聊天页回来后装浮层；设置里关掉了就顺手摘掉。 */
     static void maybeAttach(Activity act) {
-        if (act == null) return;
+        if (DISABLED || act == null) return;
         WechatGlass.warnOnce("chattime-page-" + act.getClass().getName(),
                 "聊天时间:页面 " + act.getClass().getSimpleName()
                         + " isChat=" + isChatPage(act));
@@ -106,7 +109,7 @@ final class WxChatTime {
 
     /** 聊天 Fragment 自己知道自己打开了，直接强制挂，不再靠 Activity 类名。 */
     static void attachForChat(Activity act) {
-        if (act == null) return;
+        if (DISABLED || act == null) return;
         attach(act);
     }
 
@@ -339,6 +342,8 @@ final class WxChatTime {
                             if (!logged) {
                                 logged = true;
                                 WechatGlass.log("聊天时间:avatar" + path);
+                                Object tag = row == null ? null : row.getTag();
+                                if (tag != null) dumpTimeObject(tag);
                             }
                             if (time > 0L) {
                                 int[] al = new int[2];
@@ -359,6 +364,35 @@ final class WxChatTime {
                         }
                     }
                 }
+            } catch (Throwable ignored) {
+            }
+        }
+
+        private void dumpTimeObject(Object obj) {
+            try {
+                Class<?> c = obj.getClass();
+                StringBuilder sb = new StringBuilder("聊天时间:tag " + c.getName());
+                for (java.lang.reflect.Field f : c.getDeclaredFields()) {
+                    Class<?> t = f.getType();
+                    if (t != long.class && t != int.class) continue;
+                    try {
+                        f.setAccessible(true);
+                        sb.append(" ").append(f.getName()).append("=").append(f.getLong(obj));
+                    } catch (Throwable ignored) {
+                    }
+                }
+                for (java.lang.reflect.Method m : c.getMethods()) {
+                    if (m.getParameterTypes().length != 0) continue;
+                    Class<?> r = m.getReturnType();
+                    if (r != long.class && r != int.class) continue;
+                    String n = m.getName().toLowerCase(Locale.ROOT);
+                    if (!n.contains("time") && !n.contains("create")) continue;
+                    try {
+                        sb.append(" ").append(m.getName()).append("()=").append(m.invoke(obj));
+                    } catch (Throwable ignored) {
+                    }
+                }
+                WechatGlass.log(sb.toString());
             } catch (Throwable ignored) {
             }
         }

@@ -26,6 +26,9 @@ import de.robv.android.xposed.XposedHelpers;
  */
 final class WxAntiRevoke {
 
+    /** 用户已取消防撤回功能。 */
+    static final boolean DISABLED = true;
+
     /** 微信用的是自家的 WCDB（Android SQLiteDatabase 的分支），两个都挂上。 */
     private static final String[] DB_CLASSES = {
             "com.tencent.wcdb.database.SQLiteDatabase",
@@ -39,7 +42,7 @@ final class WxAntiRevoke {
     }
 
     static void hook(final ClassLoader cl) {
-        if (hooked) return;
+        if (DISABLED || hooked) return;
         hooked = true;
         int count = 0;
         for (String name : DB_CLASSES) {
