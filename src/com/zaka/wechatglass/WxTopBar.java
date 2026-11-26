@@ -197,7 +197,6 @@ final class WxTopBar {
     // ------------------------------------------------------------ 主流程
 
     private static void apply(ViewGroup decor, Activity act) {
-        release(act);
         int w = decor.getWidth();
         int h = decor.getHeight();
         if (w < 200 || h < 400) return;
