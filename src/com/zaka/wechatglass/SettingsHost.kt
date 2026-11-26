@@ -39,6 +39,13 @@ object SettingsHost {
                 version = version,
                 onBack = { activity.finish() },
                 overlay = false,
+                log = object : LogBridge {
+                    override fun read(): String = LogStore.read(activity)
+                    override fun export(): String? = LogStore.export(activity)
+                    override fun clear() {
+                        LogStore.clear(activity)
+                    }
+                },
             )
         }
     }

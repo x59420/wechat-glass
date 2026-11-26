@@ -53,8 +53,10 @@ public final class WxEntry implements IXposedHookLoadPackage, IXposedHookZygoteI
         } catch (Throwable ignored) {
         }
 
+        hookActivityCreate();
         hookActivityResume();
         hookActivityDestroy();
+        hookWindowFocus();
         hookApplication();
         registerToCurrentApplication();
         hookTabBarCreated(lp.classLoader);
@@ -62,6 +64,57 @@ public final class WxEntry implements IXposedHookLoadPackage, IXposedHookZygoteI
 
         // 装没装上，一眼就能看出来：进微信弹一条，省得再来回猜。
         WechatGlass.toast(WechatGlass.VER + " 已加载");
+    }
+
+    /**
+     * 页面一创建就把系统生命周期回调挂上。
+     *
+     * 这是整套「页面切换」判断的地基：registerActivityLifecycleCallbacks 由系统直接回调，
+     * 跟微信有没有在自己的 onResume 里调 super 完全无关。之前只靠 hook Activity.onResume，
+     * 微信每个页面都重写且不一定调 super，结果就是「进了聊天页 Dock 还挂着」。
+     */
+    private static void hookActivityCreate() {
+        try {
+            XposedBridge.hookAllMethods(Activity.class, "onCreate", new XC_MethodHook() {
+                @Override
+                protected void afterHookedMethod(MethodHookParam param) {
+                    try {
+                        if (!(param.thisObject instanceof Activity)) return;
+                        Activity act = (Activity) param.thisObject;
+                        registerLifecycle(act.getApplication());
+                        WxDockController.onAnyCreate(act);
+                    } catch (Throwable t) {
+                        WechatGlass.warnOnce("create", "onCreate 处理失败: " + t);
+                    }
+                }
+            });
+            WechatGlass.log("已挂上 Activity.onCreate（在这里补挂系统生命周期回调）");
+        } catch (Throwable t) {
+            WechatGlass.warn("挂 Activity.onCreate 失败: " + t);
+        }
+    }
+
+    /** 窗口焦点变化：首页被别的页面盖住时焦点会丢，Dock 立刻收起来。 */
+    private static void hookWindowFocus() {
+        try {
+            XposedBridge.hookAllMethods(Activity.class, "onWindowFocusChanged", new XC_MethodHook() {
+                @Override
+                protected void afterHookedMethod(MethodHookParam param) {
+                    try {
+                        if (!(param.thisObject instanceof Activity)) return;
+                        if (param.args == null || param.args.length < 1) return;
+                        Object value = param.args[0];
+                        if (!(value instanceof Boolean)) return;
+                        WxDockController.onFocusChanged((Activity) param.thisObject,
+                                (Boolean) value);
+                    } catch (Throwable t) {
+                        WechatGlass.warnOnce("focus", "onWindowFocusChanged 处理失败: " + t);
+                    }
+                }
+            });
+        } catch (Throwable t) {
+            WechatGlass.warn("挂 onWindowFocusChanged 失败: " + t);
+        }
     }
 
     /** 每次有页面回到前台都问一次：是不是微信首页。 */
@@ -227,6 +280,7 @@ public final class WxEntry implements IXposedHookLoadPackage, IXposedHookZygoteI
                 public void onActivityResumed(Activity activity) {
                     try {
                         WxDockController.onAnyResume(activity);
+                        WxPlusPage.watch(activity);
                         final Activity page = activity;
                         View decor = activity.getWindow() == null
                                 ? null : activity.getWindow().getDecorView();

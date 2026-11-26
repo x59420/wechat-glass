@@ -289,12 +289,20 @@ private fun Label(
     )
 }
 
+/** 设置页读日志的窄接口：模块进程里用 LogStore 实现，微信里的浮层传 null。 */
+internal interface LogBridge {
+    fun read(): String
+    fun export(): String?
+    fun clear()
+}
+
 @Composable
 internal fun SettingsScreen(
     state: SettingsModel,
     version: String,
     onBack: () -> Unit,
     overlay: Boolean = false,
+    log: LogBridge? = null,
 ) {
     // 跟随系统：直接读 Configuration，不调 isSystemInDarkTheme() ——
     // Compose 不允许把 composable 调用包在 try/catch 里（编译直接报错）。
@@ -312,9 +320,13 @@ internal fun SettingsScreen(
         Box((if (overlay) Modifier.fillMaxWidth() else Modifier.fillMaxSize())
             .background(if (overlay) Color.Transparent else palette.background)) {
             if (!overlay) {
-                Box(Modifier.fillMaxSize()
-                    .background(Brush.verticalGradient(listOf(Color(0xFF17181B), Color(0xFF0D0E10))))
-                    .layerBackdrop(scene))
+                // 背景跟着深浅模式走：以前这里写死了深色渐变，浅色模式下整页还是黑的。
+                val bg = if (dark) {
+                    Brush.verticalGradient(listOf(Color(0xFF14161C), Color(0xFF080A10)))
+                } else {
+                    Brush.verticalGradient(listOf(Color(0xFFF8FAFD), Color(0xFFECEFF5)))
+                }
+                Box(Modifier.fillMaxSize().background(bg).layerBackdrop(scene))
             }
             val panel = if (overlay) {
                 Modifier.align(Alignment.Center).fillMaxWidth().padding(horizontal = 16.dp)
@@ -336,7 +348,7 @@ internal fun SettingsScreen(
                 Spacer(Modifier.height(14.dp))
 
                 SettingsTabBar(
-                    tabs = listOf("开关", "尺寸", "外观"),
+                    tabs = listOf("开关", "尺寸", "外观", "日志"),
                     selected = tab,
                     onSelect = { tab = it },
                 )
@@ -383,7 +395,7 @@ internal fun SettingsScreen(
                             Divider()
                             SwitchRow(
                                 title = "记录日志",
-                                subtitle = "开启后到 LSPosed 里搜 tag「wxglass」看过程",
+                                subtitle = "关键步骤写进日志，可以在「日志」页导出",
                                 checked = state.logEnabled.value,
                                 onChange = state::setLogEnabled,
                             )
@@ -407,24 +419,13 @@ internal fun SettingsScreen(
                         }
                     }
 
-                    else -> {
+                    2 -> {
                         SectionTitle("外观")
                         GlassCard(scene) {
                             ThemeModeRow(
                                 backdrop = scene,
                                 themeMode = state.themeMode.value,
                                 onChange = state::setThemeMode,
-                            )
-                            Divider()
-                            SliderRow("玻璃透明度", state.glassAlpha.value,
-                                0, 100, 5, state::setGlassAlpha, unit = "%",
-                                hint = "100% 就是现在这样，往左更透")
-                            Divider()
-                            SwitchRow(
-                                title = "隐藏玻璃背景",
-                                subtitle = "只留底部图标，不画那块玻璃",
-                                checked = state.hideBackground.value,
-                                onChange = state::setHideBackground,
                             )
                         }
                         Spacer(Modifier.height(16.dp))
@@ -433,6 +434,58 @@ internal fun SettingsScreen(
                                 title = "恢复默认尺寸",
                                 subtitle = "只重置尺寸和开关，不动别的",
                                 onClick = state::reset,
+                            )
+                        }
+                    }
+
+                    else -> {
+                        val bridge = log
+                        var logText by remember { mutableStateOf(bridge?.read().orEmpty()) }
+                        var notice by remember { mutableStateOf<String?>(null) }
+                        SectionTitle("运行日志")
+                        GlassCard(scene) {
+                            if (bridge == null) {
+                                TextRow(
+                                    title = "日志只在桌面 wxglass 里看",
+                                    subtitle = "微信里的这个浮层读不到模块自己的日志文件",
+                                    onClick = {},
+                                )
+                            } else {
+                                Row(Modifier.fillMaxWidth()) {
+                                    LogAction("刷新", Modifier.weight(1f)) {
+                                        logText = bridge.read()
+                                        notice = null
+                                    }
+                                    LogAction("导出", Modifier.weight(1f)) {
+                                        val where = bridge.export()
+                                        notice = if (where != null) "已导出到 $where" else "没有日志可导出"
+                                    }
+                                    LogAction("清空", Modifier.weight(1f)) {
+                                        bridge.clear()
+                                        logText = ""
+                                        notice = "已清空"
+                                    }
+                                }
+                            }
+                        }
+                        notice?.let {
+                            Spacer(Modifier.height(8.dp))
+                            Label(it, LocalSettingsPalette.current.secondary, 11.5.sp,
+                                modifier = Modifier.padding(start = 8.dp))
+                        }
+                        Spacer(Modifier.height(12.dp))
+                        GlassCard(scene) {
+                            val tail = remember(logText) {
+                                val lines = logText.split('\n').filter { it.isNotBlank() }
+                                lines.takeLast(60).joinToString("\n")
+                            }
+                            Label(
+                                text = if (tail.isBlank()) "还没有日志。开启「记录日志」后，回微信切几个页面再来看。"
+                                else tail,
+                                color = LocalSettingsPalette.current.secondary,
+                                size = 10.5.sp,
+                                lineHeight = 15.sp,
+                                modifier = Modifier.fillMaxWidth().padding(vertical = 10.dp),
                             )
                         }
                     }
@@ -698,6 +751,25 @@ private fun ThemeModeCapsule(
 }
 
 @Composable
+private fun LogAction(text: String, modifier: Modifier = Modifier, onClick: () -> Unit) {
+    val palette = LocalSettingsPalette.current
+    Box(
+        modifier = modifier
+            .padding(vertical = 10.dp)
+            .clip(RoundedCornerShape(12.dp))
+            .background(palette.accent.copy(alpha = 0.16f))
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+            ) { onClick() }
+            .padding(vertical = 9.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Label(text, palette.primary, 13.sp, weight = FontWeight.Medium)
+    }
+}
+
+@Composable
 private fun SectionTitle(text: String) {
     Label(
         text = text,
@@ -716,7 +788,9 @@ private fun GlassCard(backdrop: Backdrop, content: @Composable () -> Unit) {
         modifier = Modifier
             .fillMaxWidth()
             .clip(shape)
-            .glassSurface(backdrop, shape)
+            // 卡片不再走背景模糊：整页都是玻璃的时候，深色/浅色都发灰、字也糊。
+            // 现在用主题色卡面 + 细边框，深浅模式各自清楚。
+            .background(palette.card, shape)
             .border(1.dp, palette.border, shape)
             .padding(horizontal = 16.dp, vertical = 4.dp)
     ) {

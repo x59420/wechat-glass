@@ -126,7 +126,7 @@ final class IsoDock implements DockLayer {
      * 由调用方保留抖音原生底栏，绝不在宿主里硬塞一套可能撞版本的 Compose。
      */
     static IsoDock create(Context context, Consumer<String> log, IntConsumer onTab, Runnable onPlus,
-                          Runnable onLongPress) {
+                          Runnable onLongPress, Consumer<android.graphics.Canvas> hostPainter) {
         if (context == null) return null;
         Class<?> iso = isoClass;
         if (iso == null) {
@@ -160,8 +160,10 @@ final class IsoDock implements DockLayer {
         }
         try {
             Method create = iso.getMethod("create", Context.class,
-                    Consumer.class, IntConsumer.class, Runnable.class, Runnable.class);
-            Object overlay = create.invoke(null, context, log, onTab, onPlus, onLongPress);
+                    Consumer.class, IntConsumer.class, Runnable.class, Runnable.class,
+                    Consumer.class);
+            Object overlay = create.invoke(null, context, log, onTab, onPlus, onLongPress,
+                    hostPainter);
             if (!(overlay instanceof View)) {
                 log.accept("隔离类没有返回 View：" + overlay);
                 return null;

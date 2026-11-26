@@ -396,9 +396,11 @@ fun FloatingBottomBar(
                                 padding = maxOf(padding, 40.dp.toPx())
                                 vibrancy()
                                 blur(4.dp.toPx(), 4.dp.toPx())
+                                // 折射收小一档：背景是微信这种大色块页面，
+                                // 24dp 的折射量会把内容扭得太夸张，看着像在晃。
                                 lens(
-                                    refractionHeight = 24.dp.toPx(),
-                                    refractionAmount = 24.dp.toPx(),
+                                    refractionHeight = 13.dp.toPx(),
+                                    refractionAmount = 11.dp.toPx(),
                                 )
                             },
                             highlight = { baseHighlight.value.copy(alpha = 0.75f) },
@@ -450,9 +452,11 @@ fun FloatingBottomBar(
                             effects = {
                                 vibrancy()
                                 blur(4.dp.toPx(), 4.dp.toPx())
+                                // 折射收小一档：背景是微信这种大色块页面，
+                                // 24dp 的折射量会把内容扭得太夸张，看着像在晃。
                                 lens(
-                                    refractionHeight = 24.dp.toPx(),
-                                    refractionAmount = 24.dp.toPx(),
+                                    refractionHeight = 13.dp.toPx(),
+                                    refractionAmount = 11.dp.toPx(),
                                 )
                             },
                             onDrawSurface = { drawRect(containerColor) },

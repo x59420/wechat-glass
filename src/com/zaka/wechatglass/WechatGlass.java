@@ -28,7 +28,7 @@ public final class WechatGlass {
     static final String TAG = "wxglass";
 
     /** 版本号，和 build.gradle.kts 里的 versionName 一起改。 */
-    static final String VER = "0.2.0";
+    static final String VER = "0.3.0";
 
     private static volatile boolean verbose = true;
     private static final Set<String> SAID = new HashSet<String>();
@@ -50,6 +50,7 @@ public final class WechatGlass {
             Log.i(TAG, message);
         } catch (Throwable ignored) {
         }
+        LogBus.write("I " + message);
     }
 
     static void warn(String message) {
@@ -57,6 +58,7 @@ public final class WechatGlass {
             Log.w(TAG, message);
         } catch (Throwable ignored) {
         }
+        LogBus.write("W " + message);
     }
 
     static void error(String message, Throwable t) {
@@ -64,6 +66,7 @@ public final class WechatGlass {
             Log.e(TAG, message, t);
         } catch (Throwable ignored) {
         }
+        LogBus.write("E " + message + (t == null ? "" : (" <- " + t)));
     }
 
     /** 弹一条提示。只在主线程上、拿得到 Context 的时候弹，任何异常都吞掉。 */

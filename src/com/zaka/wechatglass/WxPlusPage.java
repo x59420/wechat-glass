@@ -2,26 +2,29 @@ package com.zaka.wechatglass;
 
 import android.app.Activity;
 import android.content.Context;
-import android.content.res.Configuration;
+import android.content.ContextWrapper;
+import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.graphics.Color;
-import android.graphics.ColorFilter;
-import android.graphics.Paint;
-import android.graphics.PixelFormat;
-import android.graphics.RectF;
+import android.graphics.Rect;
 import android.graphics.drawable.Drawable;
+import android.os.Build;
+import android.os.Handler;
+import android.os.Looper;
+import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.ViewTreeObserver;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.PopupWindow;
 import android.widget.TextView;
 
 import java.util.ArrayDeque;
+import java.util.ArrayList;
 import java.util.IdentityHashMap;
-import java.util.LinkedHashSet;
-import java.util.Set;
+import java.util.List;
 import java.util.WeakHashMap;
 
 import de.robv.android.xposed.XC_MethodHook;
@@ -30,24 +33,28 @@ import de.robv.android.xposed.XposedBridge;
 /**
  * 微信里的设置入口 + 「＋」弹层的玻璃底。
  *
- * 以前的做法是「往那一页的 ListView 末尾接一行」，实际上微信「＋」面板不是 ListView，
- * 所以那一行永远插不进去——这就是设置入口一直看不见的原因。
+ * 上一版最大的问题是：入口只在「页面 resume」那一刻找一次，而微信的「＋」面板
+ * 是**浮在首页上面的一层**，既不换 Activity、也不一定是 PopupWindow，
+ * 那一刻根本还没创建出来，所以永远找不到 —— 用户看到的就是「入口一直看不见」。
  *
- * 现在改成两条都不依赖微信内部结构的做法：
- *   1. 页面识别按**文字**来：decor 里出现「扫一扫 / 收付款 / 添加朋友」这些条目，
- *      就认定这是「＋」面板，直接在最上层浮一个自己的胶囊按钮；
- *   2. 「＋」面板如果是 PopupWindow 弹出来的，就挂在它的 contentView 上。
- * 两种都是自己画的 View，微信换控件、换类名、换版本都不影响。
+ * 现在改成盯着整棵视图树：每个页面挂一个 OnGlobalLayoutListener，
+ * 只要「扫一扫 / 收付款 / 添加朋友」这些条目出现，就当场把入口挂上去；
+ * 面板收起（条目消失）就把入口撤掉。PopupWindow 那条路也同时保留。
  */
 final class WxPlusPage {
 
     /** 用来认「＋」面板的条目文字：任意命中一个就算。 */
     private static final String[] MARKERS = {"扫一扫", "收付款", "添加朋友", "摇一摇"};
 
-    private static final String TITLE = "wxglass 液态玻璃";
+    private static final String TITLE = "wxglass 设置";
 
     private static final WeakHashMap<Activity, View> PILLS = new WeakHashMap<Activity, View>();
+    private static final WeakHashMap<Activity, Boolean> WATCHED = new WeakHashMap<Activity, Boolean>();
     private static final WeakHashMap<View, Boolean> STYLED = new WeakHashMap<View, Boolean>();
+    /** 面板容器 -> 已经插进去的那一行，避免重复插入。 */
+    private static final WeakHashMap<ViewGroup, View> ROWS = new WeakHashMap<ViewGroup, View>();
+
+    private static final Handler MAIN = new Handler(Looper.getMainLooper());
 
     private WxPlusPage() {
     }
@@ -55,7 +62,7 @@ final class WxPlusPage {
     // ------------------------------------------------------------ 挂勾
 
     static void hook(ClassLoader cl) {
-        // 1) 「＋」面板是独立页面时：页面一显示就看一眼。
+        // 1) 已知的「添加朋友」页：resume 时扫一遍（真正那一页里也放一个入口）。
         String[] pages = {
                 "com.tencent.mm.ui.FindMoreFriendsUI",
                 "com.tencent.mm.ui.AddMoreFriendsUI",
@@ -69,12 +76,13 @@ final class WxPlusPage {
                     protected void afterHookedMethod(MethodHookParam param) {
                         if (param.thisObject instanceof Activity) {
                             final Activity act = (Activity) param.thisObject;
-                            act.getWindow().getDecorView().postDelayed(new Runnable() {
+                            watch(act);
+                            MAIN.postDelayed(new Runnable() {
                                 @Override
                                 public void run() {
-                                    attachTo(act);
+                                    scan(act);
                                 }
-                            }, 400L);
+                            }, 300L);
                         }
                     }
                 });
@@ -82,37 +90,54 @@ final class WxPlusPage {
             }
         }
 
-        // 2) 「＋」面板是 PopupWindow 时：它一显示就拿到 contentView。
+        // 2) PopupWindow：显示之后改玻璃底 + 能插就插一行入口。
         try {
-            XposedBridge.hookAllMethods(PopupWindow.class, "showAsDropDown", new XC_MethodHook() {
+            XC_MethodHook popup = new XC_MethodHook() {
                 @Override
                 protected void afterHookedMethod(MethodHookParam param) {
-                    stylePopup((PopupWindow) param.thisObject);
+                    if (param.thisObject instanceof PopupWindow) {
+                        stylePopup((PopupWindow) param.thisObject);
+                    }
                 }
-            });
-            XposedBridge.hookAllMethods(PopupWindow.class, "showAtLocation", new XC_MethodHook() {
-                @Override
-                protected void afterHookedMethod(MethodHookParam param) {
-                    stylePopup((PopupWindow) param.thisObject);
-                }
-            });
+            };
+            XposedBridge.hookAllMethods(PopupWindow.class, "showAsDropDown", popup);
+            XposedBridge.hookAllMethods(PopupWindow.class, "showAtLocation", popup);
             WechatGlass.log("入口:已挂上弹层监听");
         } catch (Throwable t) {
             WechatGlass.warnOnce("popup-hook", "入口:挂弹层监听失败: " + t);
         }
     }
 
+    /** 给这个页面的视图树挂一个「布局一变就看一眼」的监听。 */
+    static void watch(final Activity act) {
+        if (act == null) return;
+        synchronized (WATCHED) {
+            if (WATCHED.get(act) != null) return;
+            WATCHED.put(act, Boolean.TRUE);
+        }
+        try {
+            final View decor = act.getWindow() == null ? null : act.getWindow().getDecorView();
+            if (decor == null) return;
+            decor.getViewTreeObserver().addOnGlobalLayoutListener(
+                    new ViewTreeObserver.OnGlobalLayoutListener() {
+                        @Override
+                        public void onGlobalLayout() {
+                            try {
+                                scan(act);
+                            } catch (Throwable ignored) {
+                            }
+                        }
+                    });
+        } catch (Throwable t) {
+            WechatGlass.warnOnce("watch", "挂布局监听失败: " + t);
+        }
+    }
+
     /** 任何页面显示时都问一句：这是不是「＋」面板。 */
     static void tryAttach(Activity act) {
         if (act == null) return;
-        try {
-            if (WxDockController.isHost(act)) return;
-            View decor = act.getWindow() == null ? null : act.getWindow().getDecorView();
-            if (decor == null) return;
-            if (findMarker(decor) == null) return;
-            attachTo(act);
-        } catch (Throwable ignored) {
-        }
+        watch(act);
+        scan(act);
     }
 
     static void detach(Activity act) {
@@ -126,63 +151,265 @@ final class WxPlusPage {
             } catch (Throwable ignored) {
             }
         }
+        WxDockController.setCovered(act, false);
     }
 
-    // ------------------------------------------------------------ 自己的那一颗胶囊
+    // ------------------------------------------------------------ 扫描
 
-    private static void attachTo(final Activity act) {
+    private static void scan(Activity act) {
         if (act == null || act.isFinishing()) return;
-        synchronized (PILLS) {
-            View old = PILLS.get(act);
-            if (old != null && old.isAttachedToWindow()) return;
-        }
         View decor = act.getWindow() == null ? null : act.getWindow().getDecorView();
-        if (!(decor instanceof FrameLayout)) {
-            // 有些页面 decor 不是 FrameLayout：直接挂到 android.R.id.content 的父层。
-            View content = act.findViewById(android.R.id.content);
-            if (content != null && content.getParent() instanceof FrameLayout) {
-                decor = (ViewGroup) content.getParent();
-            }
-        }
         if (!(decor instanceof ViewGroup)) return;
 
+        java.util.Set<String> words = new java.util.HashSet<String>();
+        List<View> markers = findMarkers(decor, words);
+        // 必须命中**两个不同的**条目文字：聊天列表里可能正好有一句「添加朋友」，
+        // 只凭一个词就当成「＋」面板，会把 Dock 误收起。
+        ViewGroup panel = (markers.size() >= 2 && words.size() >= 2)
+                ? panelOf(markers, (ViewGroup) decor) : null;
+
+        boolean host = WxDockController.isHost(act);
+        if (panel == null) {
+            // 面板收了 / 这一页没有：撤掉入口，Dock 恢复。
+            removeRow();
+            detachPillOnly(act);
+            if (host) WxDockController.setCovered(act, false);
+            return;
+        }
+
+        if (host) WxDockController.setCovered(act, true);
+        if (injectRow(act, panel, markers)) {
+            detachPillOnly(act);
+        } else {
+            attachPill(act, panel);
+        }
+    }
+
+    /** 找所有「＋」面板条目文字。 */
+    private static List<View> findMarkers(View root, java.util.Set<String> words) {
+        List<View> found = new ArrayList<View>();
+        ArrayDeque<View> queue = new ArrayDeque<View>();
+        IdentityHashMap<View, Boolean> seen = new IdentityHashMap<View, Boolean>();
+        queue.add(root);
+        int budget = 3000;
+        while (!queue.isEmpty() && budget-- > 0) {
+            View v = queue.poll();
+            if (v == null || seen.put(v, Boolean.TRUE) != null) continue;
+            if (v.getVisibility() != View.VISIBLE) continue;
+            if (v instanceof TextView) {
+                CharSequence text = ((TextView) v).getText();
+                if (text != null && text.length() > 0) {
+                    String s = text.toString().trim();
+                    for (String marker : MARKERS) {
+                        if (s.equals(marker) || s.startsWith(marker)) {
+                            if (v.isShown() && v.getWidth() > 0 && v.getHeight() > 0) {
+                                found.add(v);
+                                words.add(marker);
+                            }
+                            break;
+                        }
+                    }
+                }
+            }
+            if (v instanceof ViewGroup) {
+                ViewGroup g = (ViewGroup) v;
+                for (int i = 0; i < g.getChildCount(); i++) {
+                    queue.add(g.getChildAt(i));
+                }
+            }
+        }
+        return found;
+    }
+
+    /** 这些条目所在的那个「面板」容器：能同时装下 >=2 个条目的最小的 ViewGroup。 */
+    private static ViewGroup panelOf(List<View> markers, ViewGroup decor) {
+        IdentityHashMap<View, Boolean> set = new IdentityHashMap<View, Boolean>();
+        for (View v : markers) set.put(v, Boolean.TRUE);
+        ViewGroup best = null;
+        View cursor = markers.get(0);
+        while (cursor != null && cursor != decor) {
+            if (cursor instanceof ViewGroup) {
+                ViewGroup g = (ViewGroup) cursor;
+                int hits = countMarkers(g, set, 0);
+                if (hits >= 2 && g.getWidth() > 0 && g.getHeight() > 0
+                && g.getWidth() < g.getRootView().getWidth() * 0.95f
+                && g.getHeight() < g.getRootView().getHeight() * 0.6f) best = g;
+                if (hits >= markers.size()) break;
+            }
+            Object parent = cursor.getParent();
+            cursor = parent instanceof View ? (View) parent : null;
+        }
+        return best;
+    }
+
+    private static int countMarkers(View v, IdentityHashMap<View, Boolean> set, int depth) {
+        if (v == null || depth > 12) return 0;
+        int n = set.get(v) != null ? 1 : 0;
+        if (v instanceof ViewGroup) {
+            ViewGroup g = (ViewGroup) v;
+            for (int i = 0; i < g.getChildCount(); i++) {
+                n += countMarkers(g.getChildAt(i), set, depth + 1);
+            }
+        }
+        return n;
+    }
+
+    // ------------------------------------------------------------ 入口
+
+    /** 能加进面板就加进面板（跟着面板一起弹、一起收）。 */
+    private static boolean injectRow(Activity act, ViewGroup panel, List<View> markers) {
+        synchronized (ROWS) {
+            View old = ROWS.get(panel);
+            if (old != null && old.getParent() == panel) return true;
+        }
+        if (!(panel instanceof LinearLayout)) return false;
+        LinearLayout list = (LinearLayout) panel;
+        if (list.getOrientation() != LinearLayout.VERTICAL) return false;
+
+        try {
+            TextView sample = (TextView) markers.get(0);
+            float density = act.getResources().getDisplayMetrics().density;
+            int height = Math.max((int) (44 * density), sample.getHeight());
+
+            LinearLayout row = new LinearLayout(act);
+            row.setOrientation(LinearLayout.HORIZONTAL);
+            row.setGravity(Gravity.CENTER_VERTICAL);
+            row.setPadding((int) (18 * density), 0, (int) (18 * density), 0);
+            row.setClickable(true);
+            row.setBackground(new RowRipple(isDark(act)));
+
+            TextView label = new TextView(act);
+            label.setText(TITLE);
+            label.setTextSize(TypedValue.COMPLEX_UNIT_PX, sample.getTextSize());
+            label.setTextColor(sample.getCurrentTextColor());
+            row.addView(label, new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.WRAP_CONTENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT));
+
+            row.setOnClickListener(new View.OnClickListener() {
+                @Override
+                public void onClick(View v) {
+                    openSettings(v);
+                }
+            });
+
+            list.addView(row, new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, height));
+            synchronized (ROWS) { ROWS.put(panel, row); }
+            WechatGlass.log("入口:已插进「＋」面板");
+            return true;
+        } catch (Throwable t) {
+            WechatGlass.warnOnce("row-add", "入口:插进面板失败: " + t);
+            return false;
+        }
+    }
+
+    private static void removeRow() {
+        synchronized (ROWS) {
+            for (ViewGroup panel : new ArrayList<ViewGroup>(ROWS.keySet())) {
+                View row = ROWS.get(panel);
+                try {
+                    if (row != null && row.getParent() == panel) panel.removeView(row);
+                } catch (Throwable ignored) {
+                }
+            }
+            ROWS.clear();
+        }
+    }
+
+    /** 面板插不进去（不是竖排列表）时：贴着面板下沿浮一颗胶囊，位置跟着面板走。 */
+    private static void attachPill(final Activity act, ViewGroup panel) {
+        View decor = act.getWindow() == null ? null : act.getWindow().getDecorView();
+        if (!(decor instanceof ViewGroup)) return;
+        synchronized (PILLS) {
+            View old = PILLS.get(act);
+            if (old != null && old.isAttachedToWindow()) {
+                position(act, old, panel);
+                return;
+            }
+        }
+
         float density = act.getResources().getDisplayMetrics().density;
-        LinearLayout pill = new LinearLayout(act);
-        pill.setOrientation(LinearLayout.HORIZONTAL);
+        TextView pill = new TextView(act);
+        pill.setText(TITLE);
+        pill.setTextSize(14f);
         pill.setGravity(Gravity.CENTER);
-        pill.setPadding((int) (20 * density), (int) (11 * density),
-                (int) (20 * density), (int) (11 * density));
-        pill.setBackground(new GlassBg(density, 26f, isDark(act)));
+        pill.setTextColor(isDark(act) ? 0xFFF2F4F8 : 0xFF16181D);
+        pill.setPadding((int) (20 * density), (int) (10 * density),
+                (int) (20 * density), (int) (10 * density));
+        pill.setBackground(new GlassDrawable(26 * density, isDark(act)));
+        pill.setElevation(8f * density);
         pill.setClickable(true);
-        pill.setElevation(6f * density);
-
-        TextView label = new TextView(act);
-        label.setText(TITLE);
-        label.setTextSize(15f);
-        label.setTextColor(isDark(act) ? 0xFFF2F4F8 : 0xFF16181D);
-        pill.addView(label);
-
-        FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        lp.gravity = Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL;
-        lp.bottomMargin = (int) (34 * density);
-
         pill.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                if (!SettingsActivity.open(act)) {
-                    WechatGlass.toast(act, "打不开设置页，用桌面那个 wxglass 图标");
-                }
+                openSettings(v);
             }
         });
 
+        FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        lp.gravity = Gravity.TOP | Gravity.CENTER_HORIZONTAL;
         try {
             ((ViewGroup) decor).addView(pill, lp);
             synchronized (PILLS) { PILLS.put(act, pill); }
-            WechatGlass.log("入口:「＋」面板已挂上 wxglass 胶囊入口");
+            position(act, pill, panel);
+            WechatGlass.log("入口:「＋」面板下沿已挂上胶囊入口");
         } catch (Throwable t) {
             WechatGlass.warnOnce("pill-add", "入口:胶囊挂不上: " + t);
         }
+    }
+
+    private static void position(Activity act, View pill, View panel) {
+        try {
+            View decor = act.getWindow().getDecorView();
+            int[] p = new int[2];
+            int[] d = new int[2];
+            panel.getLocationInWindow(p);
+            decor.getLocationInWindow(d);
+            FrameLayout.LayoutParams lp = (FrameLayout.LayoutParams) pill.getLayoutParams();
+            lp.topMargin = p[1] - d[1] + panel.getHeight()
+                    + (int) (8 * act.getResources().getDisplayMetrics().density);
+            pill.setLayoutParams(lp);
+        } catch (Throwable ignored) {
+        }
+    }
+
+    private static void detachPillOnly(Activity act) {
+        View pill;
+        synchronized (PILLS) { pill = PILLS.remove(act); }
+        if (pill != null) {
+            try {
+                ViewGroup parent = (ViewGroup) pill.getParent();
+                if (parent != null) parent.removeView(pill);
+            } catch (Throwable ignored) {
+            }
+        }
+    }
+
+    private static void openSettings(View from) {
+        Context ctx = from.getContext();
+        Activity act = activityOf(ctx);
+        if (act != null && SettingsActivity.open(act)) return;
+        if (ctx != null) {
+            try {
+                android.content.Intent i = new android.content.Intent();
+                i.setClassName(WechatGlass.PKG, WechatGlass.PKG + ".SettingsActivity");
+                i.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK);
+                ctx.startActivity(i);
+                return;
+            } catch (Throwable ignored) {
+            }
+        }
+        WechatGlass.toast(ctx, "打不开设置页，用桌面那个 wxglass 图标");
+    }
+
+    private static Activity activityOf(Context c) {
+        while (c instanceof ContextWrapper) {
+            if (c instanceof Activity) return (Activity) c;
+            c = ((ContextWrapper) c).getBaseContext();
+        }
+        return c instanceof Activity ? (Activity) c : null;
     }
 
     // ------------------------------------------------------------ 弹层玻璃
@@ -196,7 +423,6 @@ final class WxPlusPage {
             return;
         }
         if (content == null) return;
-        // 等它 attach 完再改背景，否则会被自己的布局覆盖掉。
         content.post(new Runnable() {
             @Override
             public void run() {
@@ -211,170 +437,116 @@ final class WxPlusPage {
                         STYLED.put(content, Boolean.TRUE);
                     }
 
-                    // 弹层自己的胶囊底：圆角 + 半透明玻璃，图标和点击完全不碰。
                     if (content instanceof ViewGroup) {
-                        int pad = (int) (10 * density);
+                        int pad = (int) (12 * density);
                         ((ViewGroup) content).setPadding(pad, pad, pad, pad);
                     }
-                    content.setBackground(new GlassBg(density, 18f, dark));
-                    content.setElevation(10f * density);
-
-                    // 是「＋」面板就顺手把入口挂上去。
-                    if (findMarker(content) != null) {
-                        attachToPopup(content);
+                    GlassDrawable glass = new GlassDrawable(20 * density, dark);
+                    content.setBackground(glass);
+                    try {
+                        content.setElevation(12f * density);
+                    } catch (Throwable ignored) {
+                    }
+                    attachPopupBackdrop(content, glass);
+                    if (content instanceof ViewGroup) {
+                        injectPopupRow((ViewGroup) content, dark, density);
                     }
                 } catch (Throwable t) {
-                    WechatGlass.warnOnce("popup-style", "弹层美化失败（不影响使用）: " + t);
+                    WechatGlass.warnOnce("popup-style", "弹层玻璃处理失败: " + t);
                 }
             }
         });
     }
 
-    private static void attachToPopup(View content) {
-        if (!(content instanceof ViewGroup)) return;
-        ViewGroup group = (ViewGroup) content;
-        for (int i = 0; i < group.getChildCount(); i++) {
-            if (group.getChildAt(i) != null && WechatGlass.TAG.equals(group.getChildAt(i).getTag())) {
-                return;
-            }
-        }
-        Context ctx = content.getContext();
-        float density = ctx.getResources().getDisplayMetrics().density;
-        boolean dark = isDark(ctx);
-
-        TextView entry = new TextView(ctx);
-        entry.setText(TITLE);
-        entry.setTextSize(14f);
-        entry.setTextColor(dark ? 0xFFF2F4F8 : 0xFF16181D);
-        entry.setGravity(Gravity.CENTER);
-        entry.setPadding(0, (int) (12 * density), 0, (int) (12 * density));
-        entry.setBackground(new GlassBg(density, 14f, dark));
-        entry.setTag(WechatGlass.TAG);
-        entry.setClickable(true);
-        entry.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                Activity act = activityOf(v);
-                if (act != null && !SettingsActivity.open(act)) {
-                    WechatGlass.toast(act, "打不开设置页，用桌面那个 wxglass 图标");
-                }
-            }
-        });
+    /** 弹层的玻璃底：把弹层背后那一块截一次，塞给 Drawable，材质和 Dock 一致。 */
+    private static void attachPopupBackdrop(final View content, final GlassDrawable glass) {
+        if (Build.VERSION.SDK_INT < 26) return;
+        final Activity act = activityOf(content.getContext());
+        if (act == null || act.getWindow() == null) return;
         try {
-            // 用最普通的 LayoutParams：微信那个容器可能是 LinearLayout 也可能不是，
-            // 塞特定子类的参数会在布局时强转崩掉。
-            group.addView(entry, new ViewGroup.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-            WechatGlass.log("入口:「＋」弹层已挂上 wxglass 一行");
-        } catch (Throwable t) {
-            WechatGlass.warnOnce("popup-entry", "入口:弹层挂一行失败: " + t);
-        }
-    }
-
-    // ------------------------------------------------------------ 工具
-
-    private static Activity activityOf(View v) {
-        try {
-            android.content.Context c = v.getContext();
-            while (c instanceof android.content.ContextWrapper) {
-                if (c instanceof Activity) return (Activity) c;
-                c = ((android.content.ContextWrapper) c).getBaseContext();
-            }
+            final View decor = act.getWindow().getDecorView();
+            final Rect rect = new Rect();
+            int[] loc = new int[2];
+            content.getLocationInWindow(loc);
+            float scale = 1f / 3f;
+            rect.set(0, 0, Math.max(1, (int) (content.getWidth() * scale)),
+                    Math.max(1, (int) (content.getHeight() * scale)));
+            final Bitmap shot = Bitmap.createBitmap(rect.width(), rect.height(),
+                    Bitmap.Config.ARGB_8888);
+            final Rect src = new Rect(loc[0], loc[1],
+                    loc[0] + content.getWidth(), loc[1] + content.getHeight());
+            android.view.PixelCopy.request(act.getWindow(), src, shot,
+                    new android.view.PixelCopy.OnPixelCopyFinishedListener() {
+                        @Override
+                        public void onPixelCopyFinished(int result) {
+                            if (result == android.view.PixelCopy.SUCCESS) {
+                                glass.setBackdrop(shot);
+                            } else {
+                                shot.recycle();
+                            }
+                        }
+                    }, new Handler(Looper.getMainLooper()));
         } catch (Throwable ignored) {
         }
-        return null;
     }
 
-    /** 页面里有没有「＋」面板的条目文字。 */
-    private static View findMarker(View root) {
-        ArrayDeque<View> queue = new ArrayDeque<View>();
-        IdentityHashMap<View, Boolean> seen = new IdentityHashMap<View, Boolean>();
-        queue.add(root);
-        int budget = 3000;
-        Set<String> hits = new LinkedHashSet<String>();
-        while (!queue.isEmpty() && budget-- > 0) {
-            View v = queue.poll();
-            if (v == null || seen.put(v, Boolean.TRUE) != null) continue;
-            if (v instanceof TextView) {
-                CharSequence text = ((TextView) v).getText();
-                if (text != null) {
-                    String s = text.toString();
-                    for (String m : MARKERS) {
-                        if (s.contains(m)) hits.add(m);
-                    }
-                    if (hits.size() >= 2) return v;
+    /** PopupWindow 形态的「＋」面板：竖排能插就插一行，否则在里面浮一颗小胶囊。 */
+    private static void injectPopupRow(ViewGroup content, boolean dark, float density) {
+        if (content instanceof LinearLayout
+                && ((LinearLayout) content).getOrientation() == LinearLayout.VERTICAL) {
+            LinearLayout list = (LinearLayout) content;
+            TextView row = new TextView(content.getContext());
+            row.setText("  " + TITLE);
+            row.setTextSize(15f);
+            row.setTextColor(dark ? 0xFFF2F4F8 : 0xFF16181D);
+            row.setGravity(Gravity.CENTER_VERTICAL);
+            row.setPadding((int) (18 * density), (int) (10 * density),
+                    (int) (18 * density), (int) (10 * density));
+            row.setClickable(true);
+            row.setOnClickListener(new View.OnClickListener() {
+                @Override
+                public void onClick(View v) {
+                    openSettings(v);
                 }
-            }
-            if (v instanceof ViewGroup) {
-                ViewGroup g = (ViewGroup) v;
-                for (int i = 0; i < g.getChildCount(); i++) {
-                    if (g.getChildAt(i) != null) queue.add(g.getChildAt(i));
-                }
-            }
+            });
+            list.addView(row, new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, (int) (44 * density)));
         }
-        return hits.size() >= 2 ? root : null;
     }
 
     private static boolean isDark(Context ctx) {
         try {
-            Configuration c = ctx.getResources().getConfiguration();
-            return (c.uiMode & Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES;
+            return (ctx.getResources().getConfiguration().uiMode
+                    & android.content.res.Configuration.UI_MODE_NIGHT_MASK)
+                    == android.content.res.Configuration.UI_MODE_NIGHT_YES;
         } catch (Throwable t) {
             return false;
         }
     }
 
-    /** 圆角玻璃底：半透明填充 + 顶部高光 + 细描边。和 Dock 同一套观感。 */
-    static final class GlassBg extends Drawable {
+    /** 面板里那一行的按压底色（微信自己是灰的，这里给个淡一点的）。 */
+    private static final class RowRipple extends Drawable {
+        private final int color;
 
-        private final float density;
-        private final float radiusDp;
-        private final boolean dark;
-        private final Paint fill = new Paint(Paint.ANTI_ALIAS_FLAG);
-        private final Paint stroke = new Paint(Paint.ANTI_ALIAS_FLAG);
-        private final Paint sheen = new Paint(Paint.ANTI_ALIAS_FLAG);
-        private final RectF rect = new RectF();
-
-        GlassBg(float density, float radiusDp, boolean dark) {
-            this.density = density;
-            this.radiusDp = radiusDp;
-            this.dark = dark;
-            fill.setStyle(Paint.Style.FILL);
-            fill.setColor(dark ? 0xE01B202A : 0xE6F7F9FC);
-            stroke.setStyle(Paint.Style.STROKE);
-            stroke.setStrokeWidth(Math.max(1f, density));
-            stroke.setColor(dark ? 0x3DFFFFFF : 0x2E000000);
-            sheen.setStyle(Paint.Style.STROKE);
-            sheen.setStrokeWidth(Math.max(1f, density * 1.2f));
-            sheen.setColor(dark ? 0x33FFFFFF : 0x66FFFFFF);
+        RowRipple(boolean dark) {
+            color = dark ? 0x22FFFFFF : 0x11000000;
         }
 
         @Override
         public void draw(Canvas canvas) {
-            RectF r = rect;
-            r.set(getBounds());
-            float radius = radiusDp * density;
-            r.inset(0.5f * density, 0.5f * density);
-            canvas.drawRoundRect(r, radius, radius, fill);
-            canvas.drawRoundRect(r, radius, radius, stroke);
-            RectF top = new RectF(r);
-            top.bottom = r.top + Math.min(r.height() * 0.5f, radius);
-            canvas.drawRoundRect(top, radius, radius, sheen);
         }
 
         @Override
         public void setAlpha(int alpha) {
-            fill.setAlpha(alpha);
         }
 
         @Override
-        public void setColorFilter(ColorFilter colorFilter) {
-            fill.setColorFilter(colorFilter);
+        public void setColorFilter(android.graphics.ColorFilter colorFilter) {
         }
 
         @Override
         public int getOpacity() {
-            return PixelFormat.TRANSLUCENT;
+            return android.graphics.PixelFormat.TRANSLUCENT;
         }
     }
 }

@@ -2,6 +2,7 @@ package com.zaka.wechatglass;
 
 import android.app.Activity;
 import android.graphics.Bitmap;
+import android.graphics.Canvas;
 import android.graphics.Rect;
 import android.os.Handler;
 import android.os.Looper;
@@ -75,6 +76,13 @@ final class WxDockController {
      */
     private static volatile Activity TOP;
 
+    /** 最近一次 resume 的时间：用来给「刚进页面、焦点还没给过来」留一点宽限。 */
+    private static final WeakHashMap<Activity, Long> RESUMED_AT = new WeakHashMap<Activity, Long>();
+    /** 首页上又叠了一层自己的面板（「＋」菜单）时，Dock 先收起来。 */
+    private static final WeakHashMap<Activity, Boolean> COVERED = new WeakHashMap<Activity, Boolean>();
+    /** 首页窗口当前有没有焦点。失焦基本等于「被别的页面/弹窗盖住了」。 */
+    private static final WeakHashMap<Activity, Boolean> FOCUSED = new WeakHashMap<Activity, Boolean>();
+
     private WxDockController() {
     }
 
@@ -131,7 +139,31 @@ final class WxDockController {
     static void onAnyResume(Activity act) {
         if (act == null) return;
         TOP = act;
+        synchronized (RESUMED_AT) { RESUMED_AT.put(act, SystemClock.uptimeMillis()); }
         if (isHost(act)) onHostResume(act);
+    }
+
+    /** 页面创建：先记一笔，方便后面判断谁在最上面。 */
+    static void onAnyCreate(Activity act) {
+        if (act == null) return;
+        synchronized (RESUMED_AT) { RESUMED_AT.put(act, SystemClock.uptimeMillis()); }
+    }
+
+    /** 窗口焦点：首页被盖住 / 弹窗抢焦点时，立刻把 Dock 收起来。 */
+    static void onFocusChanged(Activity act, boolean focused) {
+        if (act == null) return;
+        synchronized (FOCUSED) { FOCUSED.put(act, focused); }
+        if (!focused && isHost(act)) hideNow(act);
+        if (focused && isHost(act)) {
+            synchronized (RESUMED_AT) { RESUMED_AT.put(act, SystemClock.uptimeMillis()); }
+        }
+    }
+
+    /** 「＋」面板这类覆盖层开 / 关：开着的时候 Dock 让位。 */
+    static void setCovered(Activity act, boolean covered) {
+        if (act == null) return;
+        synchronized (COVERED) { COVERED.put(act, covered); }
+        if (covered) hideNow(act);
     }
 
     static void onAnyPause(Activity act) {
@@ -209,8 +241,34 @@ final class WxDockController {
         final Backdrop backdrop = new Backdrop();
         backdrop.setContent(content);
         backdrop.setSampleScale();
-        // 直接抓窗口合成后的画面：滚动、翻页、视频都能跟上，不再是一张静态图。
-        backdrop.setWindow(act.getWindow());
+
+        // 背景走 KernelSU 那一套：把这一页的内容画进 GraphicsLayer，玻璃直接采样这层纹理。
+        // 好处是全程在 GPU 上 —— 不用每隔 33ms 把屏幕像素拷回内存（那一步才是卡的根源），
+        // 滚动、翻页、视频都是实时的，玻璃里也就是真画面而不是一张旧截图。
+        final boolean livePaint = android.os.Build.VERSION.SDK_INT >= 31;
+        final Consumer<Canvas> hostPainter;
+        if (livePaint) {
+            hostPainter = new Consumer<Canvas>() {
+                @Override
+                public void accept(Canvas canvas) {
+                    try {
+                        if (!content.isAttachedToWindow() || !content.isShown()) return;
+                        int[] loc = new int[2];
+                        content.getLocationInWindow(loc);
+                        int save = canvas.save();
+                        canvas.translate(loc[0], loc[1]);
+                        content.draw(canvas);
+                        canvas.restoreToCount(save);
+                    } catch (Throwable t) {
+                        WechatGlass.warnOnce("host-painter", "内容画进玻璃图层失败: " + t);
+                    }
+                }
+            };
+        } else {
+            hostPainter = null;
+            // 老系统（没有 RuntimeShader / GraphicsLayer 录制）：仍用窗口直采。
+            backdrop.setWindow(act.getWindow());
+        }
 
         final List<View>[] targets = new List[]{new ArrayList<View>(items)};
         final ViewGroup[] barRef = new ViewGroup[]{bar};
@@ -253,7 +311,7 @@ final class WxDockController {
 
         // 先上 KernelSU 那套 Compose 渲染器；它要是起不来，就退到 Canvas 版，
         // 总之不能让用户看到「底栏一点没变」。
-        DockLayer created = IsoDock.create(act, glassLog, onTab, onPlus, onLongPress);
+        DockLayer created = IsoDock.create(act, glassLog, onTab, onPlus, onLongPress, hostPainter);
         if (created == null) {
             WechatGlass.warn("底栏:Compose 渲染器没起来，改用兜底玻璃层");
             created = FallbackDock.create(act, glassLog, onTab);
@@ -391,7 +449,23 @@ final class WxDockController {
                     boolean otherOnTop = top != null && top != act
                             && !top.isFinishing() && !top.isDestroyed();
                     boolean active = !otherOnTop;
-                    boolean wantShow = active
+                    boolean covered;
+                    synchronized (COVERED) {
+                        Boolean flag = COVERED.get(act);
+                        covered = flag != null && flag;
+                    }
+                    Boolean focusFlag;
+                    synchronized (FOCUSED) { focusFlag = FOCUSED.get(act); }
+                    boolean focused = act.hasWindowFocus()
+                            || (focusFlag == null);
+                    long resumedAt;
+                    synchronized (RESUMED_AT) {
+                        Long value = RESUMED_AT.get(act);
+                        resumedAt = value == null ? 0L : value;
+                    }
+                    boolean justResumed = SystemClock.uptimeMillis() - resumedAt < 900L;
+                    boolean front = !covered && (focused || justResumed);
+                    boolean wantShow = active && front
                             && currentBar != null
                             && currentBar.isAttachedToWindow()
                             && currentBar.getVisibility() == View.VISIBLE
@@ -488,8 +562,8 @@ final class WxDockController {
                                       Rect bandRect, int count) {
         if (iso == null || bandRect == null) return;
         try {
-            iso.setAppearance(DockPrefs.glassAlpha(act),
-                    DockPrefs.hideGlassBackground(act), DockPrefs.themeMode(act));
+            // 透明度 / 隐藏玻璃这两项已经从设置里去掉：材质固定成默认那一档。
+            iso.setAppearance(100, false, DockPrefs.themeMode(act));
 
             int[] overlayLoc = new int[2];
             iso.view().getLocationInWindow(overlayLoc);

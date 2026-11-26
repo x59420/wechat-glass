@@ -23,6 +23,7 @@ import androidx.compose.material.icons.rounded.Home
 import androidx.compose.material.icons.rounded.PeopleAlt
 import androidx.compose.material.icons.rounded.PersonOutline
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Recomposer
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -45,6 +46,7 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.graphics.drawscope.scale
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onGloballyPositioned
@@ -101,7 +103,16 @@ class IsoOverlay private constructor(
     private val onLog: Consumer<String>,
     private val onTabClick: IntConsumer,
     private val onPlusClick: Runnable,
-    private val onLongPress: Runnable
+    private val onLongPress: Runnable,
+    /**
+     * 宿主页面内容的「画师」：把微信这一页的内容画到给定 Canvas 上（窗口坐标）。
+     *
+     * 这是 KernelSU 那套背景做法的移植：KernelSU 的 Dock 不是隔几十毫秒截一张屏，
+     * 而是把内容画进一个 GraphicsLayer，玻璃用 drawBackdrop 直接采样这层纹理
+     * （GPU 上做模糊/折射），所以滚动、视频都是实时的。
+     * 微信这边内容不是 Compose，就让宿主把它的 View 树画进同一个图层里。
+     */
+    private val hostPainter: Consumer<android.graphics.Canvas>?
 ) : FrameLayout(context) {
 
     private val overlayOwner = OverlayLifecycleOwner()
@@ -209,6 +220,7 @@ class IsoOverlay private constructor(
                     onTabClick = { index -> onTabClick.accept(index) },
                     onPlusClick = { onPlusClick.run() },
                     onLongPress = { onLongPress.run() },
+                    hostPainter = hostPainter,
                     onDrawn = {
                         if (drawn.compareAndSet(false, true)) log("玻璃已绘制")
                     }
@@ -224,8 +236,11 @@ class IsoOverlay private constructor(
             onLog: Consumer<String>,
             onTabClick: IntConsumer,
             onPlusClick: Runnable,
-            onLongPress: Runnable
-        ): IsoOverlay = IsoOverlay(context, onLog, onTabClick, onPlusClick, onLongPress)
+            onLongPress: Runnable,
+            hostPainter: Consumer<android.graphics.Canvas>?
+        ): IsoOverlay = IsoOverlay(
+            context, onLog, onTabClick, onPlusClick, onLongPress, hostPainter
+        )
     }
 
     /** 宿主算好的位置（都在覆盖层自己的坐标系里）。 */
@@ -413,34 +428,65 @@ private fun GlassSurface(
     surfaceAlpha: Float,
     hideSurface: Boolean,
     dark: Boolean,
+    hostPainter: Consumer<android.graphics.Canvas>?,
     onTabClick: (Int) -> Unit,
     onPlusClick: () -> Unit,
     onLongPress: () -> Unit,
     onDrawn: () -> Unit
 ) {
-    // 背景层只做记录，不负责显示：画面由宿主采集好之后交给这里，
+    // 背景层只做记录，不负责显示：画面由宿主画进这一层，
     // 玻璃（drawBackdrop）自己去采样。界面上不会再画一份副本。
+    //
+    // 两条路：
+    //   1. hostPainter != null（Android 12+）：KernelSU 同款做法 —— 把微信这一页的
+    //      View 树直接画进 GraphicsLayer，玻璃采样这层纹理。全程在 GPU 上，
+    //      滚动/视频跟手，不用每隔 33ms 做一次「截屏 + 回读」，也就不卡了。
+    //   2. 没有 painter：仍旧用宿主采好的 Bitmap（老系统 / 宿主画不出来时的兜底）。
+    val regionLeft = region.left.toFloat()
+    val regionTop = region.top.toFloat()
     val backdrop = rememberLayerBackdrop(onDraw = {
-        val frame = image.value
-        if (frame != null && size.width > 0f && size.height > 0f) {
-            drawImage(
-                image = frame,
-                dstOffset = androidx.compose.ui.unit.IntOffset.Zero,
-                dstSize = androidx.compose.ui.unit.IntSize(
-                    size.width.toInt().coerceAtLeast(1),
-                    size.height.toInt().coerceAtLeast(1),
-                ),
-                filterQuality = FilterQuality.Low,
-            )
-        } else if (size.width > 0f && size.height > 0f) {
-            // 一帧画面都没有（视频受保护抓不到 / 刚进页面）：先垫一层中性深色。
-            // 以前这里什么都不画，玻璃背后就是宿主的窗口底色 —— 看起来就是「一片黑」。
-            // 垫一层之后，玻璃自己的模糊和折射还在，观感是磨砂深灰，不是死黑。
-            // 有画面的正常情况完全走上面那条分支，外观一点不变。
-            drawRect(color = Color(0xFF1C1D22), size = size)
+        val painter = hostPainter
+        if (painter != null && size.width > 0f && size.height > 0f) {
+            try {
+                drawIntoCanvas { canvas ->
+                    val native = canvas.nativeCanvas
+                    val save = native.save()
+                    native.translate(-regionLeft, -regionTop)
+                    painter.accept(native)
+                    native.restoreToCount(save)
+                }
+            } catch (_: Throwable) {
+                drawRect(color = Color(0xFF1C1D22), size = size)
+            }
+        } else {
+            val frame = image.value
+            if (frame != null && size.width > 0f && size.height > 0f) {
+                drawImage(
+                    image = frame,
+                    dstOffset = androidx.compose.ui.unit.IntOffset.Zero,
+                    dstSize = androidx.compose.ui.unit.IntSize(
+                        size.width.toInt().coerceAtLeast(1),
+                        size.height.toInt().coerceAtLeast(1),
+                    ),
+                    filterQuality = FilterQuality.Low,
+                )
+            } else if (size.width > 0f && size.height > 0f) {
+                // 一帧画面都没有（视频受保护抓不到 / 刚进页面）：先垫一层中性深色。
+                drawRect(color = Color(0xFF1C1D22), size = size)
+            }
         }
     })
     val density = LocalDensity.current
+    // 重录节拍：40fps。只在这一帧真的需要重画时才自增，避免空转。
+    var frameTick by remember { mutableIntStateOf(0) }
+    LaunchedEffect(hostPainter) {
+        if (hostPainter != null) {
+            while (true) {
+                kotlinx.coroutines.delay(24L)
+                frameTick++
+            }
+        }
+    }
     // 33 以下没有 RuntimeShader；个别机型/ROM 上 AGSL 编译会直接抛错，
     // 这里先探一次：探不通就走 Miuix 自带的「无模糊」降级，绝不让一帧着色器异常把整层玻璃干掉。
     val isBlurEnabled = remember {
@@ -464,6 +510,12 @@ private fun GlassSurface(
                         with(density) { region.width().toDp() },
                         with(density) { region.height().toDp() }
                     )
+                    // 每一帧都重新录一次这一条：内容在滚、视频在动，图层必须跟着重录。
+                    // 只读 tick 不改状态，所以只会重绘、不会触发重组。
+                    .drawWithContent {
+                        if (hostPainter != null) frameTick
+                        drawContent()
+                    }
                     .layerBackdrop(backdrop)
             )
         }
