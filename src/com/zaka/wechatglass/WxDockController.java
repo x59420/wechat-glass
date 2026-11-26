@@ -387,7 +387,10 @@ final class WxDockController {
 
                     // 原生底栏还在、还有实体，就显示；不然收起来。
                     // 前台必须是首页：聊天页 / 添加朋友页 / 扫一扫压上来时一律收起。
-                    boolean active = TOP == null || TOP == act;
+                    Activity top = TOP;
+                    boolean otherOnTop = top != null && top != act
+                            && !top.isFinishing() && !top.isDestroyed();
+                    boolean active = !otherOnTop;
                     boolean wantShow = active
                             && currentBar != null
                             && currentBar.isAttachedToWindow()
@@ -395,11 +398,15 @@ final class WxDockController {
                             && SelfMask.effectiveAlpha(currentBar) > 0.01f
                             && currentBar.getWidth() > 0;
 
-                    if (wantShow && !shown[0]) {
+                    // 显隐跟实际画面对齐，而不是跟一个一次性的布尔位：
+                    // 从聊天页回来时玻璃层可能已经被上一步设成 GONE，只看布尔位就不会再显示。
+                    boolean visible = iso.view().getVisibility() == View.VISIBLE
+                            && iso.view().getAlpha() > 0.5f;
+                    if (wantShow && !visible) {
                         shown[0] = true;
                         animate(iso.view(), true);
                         if (!SelfMask.masked(currentBar)) SelfMask.mask(currentBar);
-                    } else if (!wantShow && shown[0]) {
+                    } else if (!wantShow && visible) {
                         shown[0] = false;
                         animate(iso.view(), false);
                     }

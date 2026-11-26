@@ -114,26 +114,31 @@ final class WxTopBar {
         container.setClipToOutline(false);
         WechatGlass.log("顶栏:搜索/＋ 已包成玻璃胶囊");
 
-        // 顶栏本体：换成透明渐变，内容直接从状态栏下面透上来。
-        View bar = container;
-        while (bar.getParent() instanceof ViewGroup) {
-            View parent = (View) bar.getParent();
+        // 顶栏本体：换成从上到下的透明渐变，内容直接从状态栏下面透上来。
+        // 只认"宽度接近整屏、高度还是一条标题栏"的那层祖先；往上再也找不到就不动，
+        // 绝不能一路爬到内容根上去把整屏刷成渐变。
+        int limit = (int) (160 * density);
+        View titleBar = null;
+        View cursor = container;
+        for (int depth = 0; depth < 12; depth++) {
+            if (!(cursor.getParent() instanceof View)) break;
+            View parent = (View) cursor.getParent();
             if (parent == decor) break;
             int ph = parent.getHeight();
-            int pw = parent.getWidth();
-            if (pw >= w * 0.9f && ph > 0 && ph < 160 * density) {
-                bar = parent;
-                break;
-            }
-            bar = parent;
-            if (bar == decor) break;
+            if (parent.getWidth() < w * 0.9f) break;
+            if (ph <= 0 || ph >= limit) break;
+            titleBar = parent;
+            cursor = parent;
         }
-        if (bar != container && bar != decor && DONE.get(bar) == null) {
-            DONE.put(bar, "bar");
+        if (titleBar != null && titleBar != container && DONE.get(titleBar) == null) {
+            DONE.put(titleBar, "bar");
+            boolean dark = isDark(act);
             GradientDrawable scrim = new GradientDrawable(
                     GradientDrawable.Orientation.TOP_BOTTOM,
-                    new int[]{0xCC000000, 0x33000000, 0x00000000});
-            bar.setBackground(scrim);
+                    dark ? new int[]{0x66000000, 0x26000000, 0x00000000}
+                            : new int[]{0x66FFFFFF, 0x26FFFFFF, 0x00FFFFFF});
+            titleBar.setBackground(scrim);
+            WechatGlass.log("顶栏:已换成透明渐变");
         }
     }
 
