@@ -269,12 +269,13 @@ final class WxTopBar {
     private static TopLayer addLayer(ViewGroup decor, Activity act) {
         TopLayer layer = new TopLayer(act.getApplicationContext());
         try {
-            // 顶栏图标和胶囊必须压在微信自己的标题栏之上，不能被它的 actionBar/elevation 盖住。
-            layer.setElevation(1000f);
-            layer.setTranslationZ(1000f);
+            // 只覆盖状态栏 + 标题栏这一小条，绝不铺满全屏：
+            // 全屏覆盖层会被微信当成“盖住底栏”的悬浮层，导致 Dock 直接不接管。
+            int density = (int) act.getResources().getDisplayMetrics().density;
+            int layerH = Math.min(decor.getHeight(),
+                    statusBarHeight(act) + 96 * density);
             decor.addView(layer, new ViewGroup.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT,
-                    ViewGroup.LayoutParams.MATCH_PARENT));
+                    ViewGroup.LayoutParams.MATCH_PARENT, Math.max(1, layerH)));
             layer.bringToFront();
         } catch (Throwable t) {
             WechatGlass.warnOnce("topbar-add", "顶栏玻璃层挂不上: " + t);
@@ -749,10 +750,8 @@ final class WxTopBar {
         void setActive(boolean value) {
             active = value;
             glass.setActive(value);
+            // 用户要求取消顶栏渐变模糊：不再抓整条画面，只保留胶囊玻璃。
             removeCallbacks(topCapture);
-            if (value) {
-                post(topCapture);
-            }
         }
 
         void releaseAll() {
@@ -800,47 +799,8 @@ final class WxTopBar {
 
         @Override
         protected void onDraw(Canvas canvas) {
-            // 顶栏渐变模糊：把背后那一条画面以低分辨率铺上来（放大本身就是模糊），
-            // 再用 alpha 渐变让它从上往下自然淡出。
-            if (scrimBounds.width() <= 0 && getWidth() > 0) {
-                scrimBounds.set(0, 0, getWidth(),
-                        Math.max(statusBarHeight(host) + dp(44), dp(64)));
-            }
-            if (scrimBounds.height() > 0) {
-                if (topSample != null && !topSample.isRecycled()) {
-                    scrimDst.set(0, 0, getWidth(),
-                            Math.min(getHeight(), scrimBounds.height()));
-                    canvas.drawBitmap(topSample, null, scrimDst, topPaint);
-                }
-                // 再压一层很淡的雾，纯白 / 纯黑背景上也有层次，但不会糊住标题。
-                // 和上面同一方向：底下（标题栏）最浓，往上淡掉。
-                scrim.setShader(new LinearGradient(0, 0, 0, scrimBounds.height(),
-                        dark ? new int[]{0x00000000, 0x14000000, 0x33000000}
-                                : new int[]{0x00FFFFFF, 0x12FFFFFF, 0x2EFFFFFF},
-                        new float[]{0f, 0.45f, 1f}, Shader.TileMode.CLAMP));
-                canvas.drawRect(0, 0, getWidth(), scrimBounds.height(), scrim);
-                scrim.setShader(null);
-            }
-
-            // 标题文字不受渐变影响：把原生标题原样再画一遍到最上面。
-            // 这样玻璃带是连续的，但「微信 / 通讯录 / 发现」这几个字永远是清晰的，
-            // 不会被模糊层或渐变雾压住。
-            View title = titleView;
-            if (title != null && title.isShown() && title.getWidth() > 0
-                    && title.getHeight() > 0) {
-                try {
-                    int[] self = new int[2];
-                    int[] loc = new int[2];
-                    getLocationInWindow(self);
-                    title.getLocationInWindow(loc);
-                    int save = canvas.save();
-                    canvas.translate(loc[0] - self[0], loc[1] - self[1]);
-                    canvas.clipRect(0, 0, title.getWidth(), title.getHeight());
-                    title.draw(canvas);
-                    canvas.restoreToCount(save);
-                } catch (Throwable ignored) {
-                }
-            }
+            // 顶栏渐变模糊已取消：这里只让子 View（胶囊 + 两个图标）自己画。
+            // 不再采样标题栏、不再铺渐变，避免糊住内容，也避免整层挡住底栏。
         }
 
         /** 玻璃层只在胶囊 / 图标范围内吃触摸，其余穿透给微信。 */

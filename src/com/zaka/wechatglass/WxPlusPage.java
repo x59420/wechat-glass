@@ -497,9 +497,12 @@ final class WxPlusPage {
                                     group.getPaddingRight(), group.getPaddingBottom()};
                             POPUP_PADDING.put(content, orig);
                         }
-                        int pad = (int) (12 * density);
-                        group.setPadding(orig[0] + pad, orig[1] + pad,
-                                orig[2] + pad, orig[3] + pad);
+                        // 只加纵向留白，不要横向再撑一圈：
+                        // 横向 padding 会把原本刚好放得下的菜单文字挤到换行。
+                        int pad = (int) (8 * density);
+                        group.setPadding(orig[0], orig[1] + pad,
+                                orig[2], orig[3] + pad);
+                        group.setClipToPadding(false);
                     }
                     // dense = true：底色做实，文字压得住。
                     // 关键：底色深浅跟着**微信自己写的文字颜色**走，而不是只看系统深色开关——
