@@ -610,7 +610,8 @@ final class WxDockController {
                     } else {
                         WxChatTime.detach(act);
                     }
-                    boolean blocked = chatOpen || (top != null
+                    boolean nonMain = hasNonMainPageTitle(decor);
+                    boolean blocked = chatOpen || nonMain || (top != null
                             && (isBlockedPage(top) || WxChatTime.isChatPage(top)));
                     boolean active = !otherOnTop && !blocked && !NON_HOST;
                     boolean covered;
@@ -698,6 +699,47 @@ final class WxDockController {
         }, WATCHDOG_MS);
 
         return true;
+    }
+
+    /** 添加朋友 / 发起群聊这类二级页没有底部输入框，但顶部标题不是主 tab。 */
+    private static boolean hasNonMainPageTitle(View root) {
+        try {
+            if (!(root instanceof ViewGroup)) return false;
+            java.util.ArrayDeque<View> queue = new java.util.ArrayDeque<View>();
+            java.util.IdentityHashMap<View, Boolean> seen =
+                    new java.util.IdentityHashMap<View, Boolean>();
+            queue.add(root);
+            int budget = 12000;
+            int[] loc = new int[2];
+            int screenH = root.getResources().getDisplayMetrics().heightPixels;
+            while (!queue.isEmpty() && budget-- > 0) {
+                View v = queue.poll();
+                if (v == null || seen.put(v, Boolean.TRUE) != null) continue;
+                if (v instanceof android.widget.TextView && v.isShown()) {
+                    v.getLocationInWindow(loc);
+                    if (loc[1] < screenH * 0.22f) {
+                        CharSequence cs = ((android.widget.TextView) v).getText();
+                        if (cs != null) {
+                            String t = cs.toString().trim();
+                            if (t.equals("添加朋友") || t.equals("发起群聊")
+                                    || t.equals("选择联系人") || t.equals("新的朋友")
+                                    || t.equals("群聊")) return true;
+                        }
+                    }
+                }
+                if (v instanceof ViewGroup) {
+                    ViewGroup g = (ViewGroup) v;
+                    for (int i = 0; i < g.getChildCount(); i++) {
+                        View c = g.getChildAt(i);
+                        if (c != null && !c.getClass().getName().startsWith(WechatGlass.PKG)) {
+                            queue.add(c);
+                        }
+                    }
+                }
+            }
+        } catch (Throwable ignored) {
+        }
+        return false;
     }
 
     /** 聊天页底部一定有输入框；首页没有。用它判断当前是不是聊天 Fragment。 */
