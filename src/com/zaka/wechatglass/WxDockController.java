@@ -157,7 +157,7 @@ final class WxDockController {
     }
 
     /** 立刻收起所有首页上的 Dock，不等轮询。 */
-    private static void hideAll() {
+    static void hideAll() {
         java.util.List<Activity> acts;
         synchronized (OVERLAYS) {
             acts = new java.util.ArrayList<Activity>(OVERLAYS.keySet());

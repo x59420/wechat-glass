@@ -65,6 +65,7 @@ public final class WxEntry implements IXposedHookLoadPackage, IXposedHookZygoteI
         WxSettingsEntry.hook(lp.classLoader);
         WxAntiRevoke.hook(lp.classLoader);
         WxChatTime.hook(lp.classLoader);
+        hookNonHostPages(lp.classLoader);
 
         // 装没装上，一眼就能看出来：进微信弹一条，省得再来回猜。
         WechatGlass.toast(WechatGlass.VER + " 已加载");
@@ -275,6 +276,40 @@ public final class WxEntry implements IXposedHookLoadPackage, IXposedHookZygoteI
         } catch (Throwable t) {
             WechatGlass.warnOnce("tabbar-hook", "挂底栏创建回调失败: " + t);
         }
+    }
+
+    /**
+     * 聊天 / 添加朋友这类页面一 resume，直接撤掉首页的 Dock 和顶栏。
+     * 不再依赖 mResumedActivity、焦点、onPause 谁先谁后。
+     */
+    private static void hookNonHostPages(ClassLoader cl) {
+        String[] pages = {
+                "com.tencent.mm.ui.chatting.ChattingMainUI",
+                "com.tencent.mm.ui.chatting.ChattingUI",
+                "com.tencent.mm.ui.chatting.ChattingUIProxyUI",
+                "com.tencent.mm.plugin.profile.ui.ContactInfoUI",
+                "com.tencent.mm.ui.FindMoreFriendsUI",
+                "com.tencent.mm.ui.AddMoreFriendsUI",
+        };
+        int count = 0;
+        for (String name : pages) {
+            try {
+                Class<?> cls = Class.forName(name, false, cl);
+                XposedBridge.hookAllMethods(cls, "onResume", new XC_MethodHook() {
+                    @Override
+                    protected void afterHookedMethod(MethodHookParam param) {
+                        try {
+                            WxDockController.hideAll();
+                            WxTopBar.releaseAll();
+                        } catch (Throwable ignored) {
+                        }
+                    }
+                });
+                count++;
+            } catch (Throwable ignored) {
+            }
+        }
+        WechatGlass.log("非首页:已挂上 " + count + " 个页面，进页面立刻收 Dock");
     }
 
     /** 顺着 View 的 Context 往上找 Activity。 */

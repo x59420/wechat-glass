@@ -527,6 +527,22 @@ final class WxPlusPage {
                     if (content instanceof ViewGroup) {
                         injectPopupRow((ViewGroup) content, dark, density);
                     }
+                    // 让弹层按内容实际高度展开，不再出现内部滚动。
+                    try {
+                        int width = pw.getWidth() > 0 ? pw.getWidth() : content.getWidth();
+                        content.measure(
+                                android.view.View.MeasureSpec.makeMeasureSpec(
+                                        Math.max(1, width),
+                                        android.view.View.MeasureSpec.AT_MOST),
+                                android.view.View.MeasureSpec.makeMeasureSpec(
+                                        0, android.view.View.MeasureSpec.UNSPECIFIED));
+                        int desired = content.getMeasuredHeight();
+                        if (desired > 0 && desired != pw.getHeight()) {
+                            pw.setHeight(desired);
+                            pw.update();
+                        }
+                    } catch (Throwable ignored) {
+                    }
                 } catch (Throwable t) {
                     WechatGlass.warnOnce("popup-style", "弹层玻璃处理失败: " + t);
                 }

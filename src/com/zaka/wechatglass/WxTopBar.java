@@ -175,6 +175,15 @@ final class WxTopBar {
         }
     }
 
+    /** 所有首页的顶栏层全部撤掉（聊天页 / 添加朋友页出现时用）。 */
+    static void releaseAll() {
+        java.util.List<Activity> acts;
+        synchronized (LAYERS) {
+            acts = new ArrayList<Activity>(LAYERS.keySet());
+        }
+        for (Activity a : acts) release(a);
+    }
+
     static void pause(Activity act) {
         // 离开首页就把整层撤掉。只 setActive(false) 会把空胶囊留在窗口上，
         // 聊天页右上角那块黑色药丸就是这么来的。
@@ -921,7 +930,15 @@ final class WxTopBar {
                 if (w <= 0 || h <= 0) return null;
                 Bitmap b = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888);
                 Canvas c = new Canvas(b);
-                v.draw(c);
+                // 原生图标可能已经被 hideNatives() 设成 alpha=0；
+                // 直接 draw 会得到一张全透明位图，胶囊里就“没图标”。
+                float oldAlpha = v.getAlpha();
+                try {
+                    v.setAlpha(1f);
+                    v.draw(c);
+                } finally {
+                    v.setAlpha(oldAlpha);
+                }
                 return b;
             } catch (Throwable t) {
                 return null;
