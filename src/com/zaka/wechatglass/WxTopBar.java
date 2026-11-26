@@ -221,12 +221,8 @@ final class WxTopBar {
             release(act);
             return;
         }
-        // 只有顶栏确实压着一层蒙版/渐变/模糊层时才做渐变；没有就完全不碰。
-        if (!hasTopMask(decor, act, density)) {
-            release(act);
-            return;
-        }
-
+        // 渐变只在顶栏确实有蒙版时画；搜索/＋胶囊仍然按图标是否存在决定。
+        boolean gradient = hasTopMask(decor, act, density);
         List<View> icons = findIcons(decor, act, w, h, density);
 
         // 微信布局重排时会有一两帧认不到图标；这时沿用上一次认到的两颗，
@@ -294,7 +290,7 @@ final class WxTopBar {
         }
         layer.setBandBottom(bandBottomOf(decor, act, density));
         layer.setTitleView(findTitleView(decor, act, density));
-        layer.bind(act, dark, capsule, icons, union);
+        layer.bind(act, dark, capsule, icons, union, gradient);
     }
 
     /**
@@ -701,6 +697,7 @@ final class WxTopBar {
         private boolean dark;
         /** 渐变带底边（窗口坐标）；0 = 还不知道，先按默认算。 */
         private int bandBottomWindow;
+        private boolean gradient;
         /** 原生标题（微信 / 通讯录 / 发现）：渐变画完再把它盖回去，字不跟着糊。 */
         private View titleView;
 
@@ -767,6 +764,7 @@ final class WxTopBar {
 
         /** 把顶栏那一条按低分辨率画进一张位图，再套一层竖直 alpha 渐变。 */
         private void grabTop() {
+            if (!gradient) return;
             View root = contentRoot;
             if (root == null || root.getWidth() <= 0 || root.getHeight() <= 0) return;
             int bandH = Math.min(root.getHeight(), scrimBounds.height());
@@ -810,9 +808,10 @@ final class WxTopBar {
         }
 
         void bind(Activity act, boolean isDark, Rect capsuleInWindow, List<View> icons,
-                  Rect unionInWindow) {
+                  Rect unionInWindow, boolean gradientEnabled) {
             host = act;
             dark = isDark;
+            gradient = gradientEnabled;
             setActive(true);
             glass.bind(act, capsuleInWindow);
             glass.setDark(isDark);
@@ -967,6 +966,7 @@ final class WxTopBar {
 
         /** 只更新渐变那一条（图标没认到时用）。 */
         void refreshScrim(boolean isDark) {
+            if (!gradient) return;
             dark = isDark;
             setActive(true);
             int[] self = new int[2];
@@ -980,8 +980,8 @@ final class WxTopBar {
         void setActive(boolean value) {
             active = value;
             glass.setActive(value);
-            // 用户要求取消顶栏渐变模糊：不再抓整条画面，只保留胶囊玻璃。
             removeCallbacks(topCapture);
+            if (value && gradient) post(topCapture);
         }
 
         void releaseAll() {
@@ -1047,8 +1047,9 @@ final class WxTopBar {
 
         @Override
         protected void onDraw(Canvas canvas) {
-            // 顶栏渐变模糊已取消：这里只让子 View（胶囊 + 两个图标）自己画。
-            // 不再采样标题栏、不再铺渐变，避免糊住内容，也避免整层挡住底栏。
+            if (!gradient || topSample == null || topSample.isRecycled()) return;
+            scrimDst.set(0, 0, getWidth(), scrimBounds.height());
+            canvas.drawBitmap(topSample, null, scrimDst, topPaint);
         }
 
         /** 玻璃层只在胶囊 / 图标范围内吃触摸，其余穿透给微信。 */
