@@ -778,10 +778,15 @@ final class WxDockController {
             @Override
             public void run() {
                 if (!live[0]) return;
+                // 这个看门狗只负责自己安装的那一层。旧安装留下的看门狗
+                // 不能把后来新挂上的 Dock 拆掉，否则会原生/玻璃来回闪。
+                DockLayer current;
+                synchronized (OVERLAYS) { current = OVERLAYS.get(act); }
+                if (current != iso) return;
                 if (iso.hasDrawn()) return;
                 live[0] = false;
                 MAIN.removeCallbacks(poll);
-                teardown(act, "玻璃两秒内没画出来");
+                teardown(act, "玻璃超时没画出来");
                 WechatGlass.warn("底栏:玻璃没画出来，已恢复微信原生底栏");
             }
         }, WATCHDOG_MS);
