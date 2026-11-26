@@ -258,15 +258,16 @@ final class WxDockController {
     static void onAnyResume(Activity act) {
         if (act == null) return;
         TOP = act;
-        NON_HOST = !isHost(act);
         synchronized (RESUMED_AT) { RESUMED_AT.put(act, SystemClock.uptimeMillis()); }
-        if (NON_HOST) {
-            // 任何非首页 Activity（聊天、联系人资料、添加朋友、设置…）压上来，
-            // 先把首页的 Dock 收掉。不要只认几个写死的类名。
+        if (!isHost(act)) {
+            // 任何非首页 Activity 压上来，先把首页的 Dock 收掉。
+            NON_HOST = true;
             hideAll();
             return;
         }
-        onHostResume(act);
+        // 首页在聊天页下面 resume 时，不能把 NON_HOST 清掉；
+        // 只有首页真正拿到焦点（onFocusChanged）才恢复。
+        if (!NON_HOST) onHostResume(act);
     }
 
     /** 页面创建：先记一笔，方便后面判断谁在最上面。 */
