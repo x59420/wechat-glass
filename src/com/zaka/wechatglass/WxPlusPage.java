@@ -261,7 +261,9 @@ final class WxPlusPage {
             }
         });
         try {
-            group.addView(entry, new LinearLayout.LayoutParams(
+            // 用最普通的 LayoutParams：微信那个容器可能是 LinearLayout 也可能不是，
+            // 塞特定子类的参数会在布局时强转崩掉。
+            group.addView(entry, new ViewGroup.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
             WechatGlass.log("入口:「＋」弹层已挂上 wxglass 一行");
         } catch (Throwable t) {
