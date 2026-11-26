@@ -690,6 +690,7 @@ final class WxTopBar {
         private final RectF scrimDst = new RectF();
         private final Paint topPaint = new Paint(Paint.FILTER_BITMAP_FLAG | Paint.DITHER_FLAG);
         private View contentRoot;
+        private View blurView;
         private Bitmap topSample;
         private boolean active;
         private Activity host;
@@ -834,6 +835,25 @@ final class WxTopBar {
             int bandBottom = bandBottomWindow > 0 ? bandBottomWindow - self[1]
                     : statusBarHeight(act) + dp(44);
             scrimBounds.set(0, 0, getWidth(), Math.max(0, bandBottom));
+            if (gradient) {
+                if (blurView == null && getWidth() > 0 && scrimBounds.height() > 0) {
+                    ViewGroup decor = (ViewGroup) host.getWindow().getDecorView();
+                    blurView = WxTopBlur.create(host, decor, getWidth(),
+                            scrimBounds.height(), dark ? 0x66101418 : 0x66FFFFFF);
+                    if (blurView != null) {
+                        addView(blurView, 0, new LayoutParams(getWidth(), scrimBounds.height()));
+                    }
+                }
+                if (blurView != null) {
+                    blurView.setVisibility(VISIBLE);
+                    ViewGroup.LayoutParams lp = blurView.getLayoutParams();
+                    lp.width = getWidth();
+                    lp.height = scrimBounds.height();
+                    blurView.setLayoutParams(lp);
+                }
+            } else if (blurView != null) {
+                blurView.setVisibility(GONE);
+            }
             invalidate();
 
             for (int i = 0; i < 2; i++) {
@@ -973,6 +993,25 @@ final class WxTopBar {
             int bandBottom = bandBottomWindow > 0 ? bandBottomWindow - self[1]
                     : statusBarHeight(host) + dp(44);
             scrimBounds.set(0, 0, getWidth(), Math.max(0, bandBottom));
+            if (gradient) {
+                if (blurView == null && getWidth() > 0 && scrimBounds.height() > 0) {
+                    ViewGroup decor = (ViewGroup) host.getWindow().getDecorView();
+                    blurView = WxTopBlur.create(host, decor, getWidth(),
+                            scrimBounds.height(), dark ? 0x66101418 : 0x66FFFFFF);
+                    if (blurView != null) {
+                        addView(blurView, 0, new LayoutParams(getWidth(), scrimBounds.height()));
+                    }
+                }
+                if (blurView != null) {
+                    blurView.setVisibility(VISIBLE);
+                    ViewGroup.LayoutParams lp = blurView.getLayoutParams();
+                    lp.width = getWidth();
+                    lp.height = scrimBounds.height();
+                    blurView.setLayoutParams(lp);
+                }
+            } else if (blurView != null) {
+                blurView.setVisibility(GONE);
+            }
             invalidate();
         }
 
@@ -1046,9 +1085,18 @@ final class WxTopBar {
 
         @Override
         protected void onDraw(Canvas canvas) {
-            if (!gradient || topSample == null || topSample.isRecycled()) return;
-            scrimDst.set(0, 0, getWidth(), scrimBounds.height());
-            canvas.drawBitmap(topSample, null, scrimDst, topPaint);
+            if (!gradient || scrimBounds.height() <= 0) return;
+            if (blurView == null) {
+                if (topSample == null || topSample.isRecycled()) return;
+                scrimDst.set(0, 0, getWidth(), scrimBounds.height());
+                canvas.drawBitmap(topSample, null, scrimDst, topPaint);
+            }
+            // 真模糊之上只叠一层很轻的 alpha 渐变，让顶栏往下自然淡出。
+            Paint veil = new Paint(Paint.ANTI_ALIAS_FLAG);
+            veil.setShader(new android.graphics.LinearGradient(0, 0, 0, scrimBounds.height(),
+                    new int[]{dark ? 0x33000000 : 0x33FFFFFF, 0x00000000},
+                    new float[]{0f, 1f}, android.graphics.Shader.TileMode.CLAMP));
+            canvas.drawRect(0, 0, getWidth(), scrimBounds.height(), veil);
         }
 
         /** 玻璃层只在胶囊 / 图标范围内吃触摸，其余穿透给微信。 */
