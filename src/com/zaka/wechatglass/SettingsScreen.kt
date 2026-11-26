@@ -101,6 +101,8 @@ internal class SettingsState(context: Context) : SettingsModel {
     override val bottomTransparent = mutableStateOf(DockPrefs.bottomTransparent(ctx))
     override val menuTransparent = mutableStateOf(DockPrefs.menuTransparent(ctx))
     override val videoTint = mutableStateOf(DockPrefs.videoTintFallback(ctx))
+    override val antiRevoke = mutableStateOf(DockPrefs.antiRevoke(ctx))
+    override val chatTime = mutableStateOf(DockPrefs.chatTime(ctx))
 
     override val height = mutableStateOf(DockPrefs.heightDp(ctx))
     override val tabWidth = mutableStateOf(DockPrefs.tabWidthDp(ctx))
@@ -128,6 +130,18 @@ internal class SettingsState(context: Context) : SettingsModel {
     override fun setLogEnabled(value: Boolean) {
         logEnabled.value = value
         DockPrefs.setLogEnabled(ctx, value)
+        push()
+    }
+
+    override fun setAntiRevoke(value: Boolean) {
+        antiRevoke.value = value
+        DockPrefs.setAntiRevoke(ctx, value)
+        push()
+    }
+
+    override fun setChatTime(value: Boolean) {
+        chatTime.value = value
+        DockPrefs.setChatTime(ctx, value)
         push()
     }
 
@@ -231,6 +245,8 @@ internal class SettingsState(context: Context) : SettingsModel {
             themeMode.value,
             glassAlpha.value,
             hideBackground.value,
+            antiRevoke.value,
+            chatTime.value,
         )
     }
 
@@ -391,6 +407,20 @@ internal fun SettingsScreen(
                                 subtitle = "纯色页面不至于是一块黑玻璃",
                                 checked = state.videoTint.value,
                                 onChange = state::setVideoTint,
+                            )
+                            Divider()
+                            SwitchRow(
+                                title = "消息防撤回",
+                                subtitle = "别人撤回的消息留在原地，自己撤回照常",
+                                checked = state.antiRevoke.value,
+                                onChange = state::setAntiRevoke,
+                            )
+                            Divider()
+                            SwitchRow(
+                                title = "头像上方显示时间",
+                                subtitle = "聊天页每条消息的头像上面标 时:分:秒",
+                                checked = state.chatTime.value,
+                                onChange = state::setChatTime,
                             )
                             Divider()
                             SwitchRow(

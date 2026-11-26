@@ -45,6 +45,10 @@ final class WxTopBar {
     private static final WeakHashMap<View, Boolean> TINTED = new WeakHashMap<View, Boolean>();
     /** 原生图标的原 alpha：藏起来之前记一份，要能还原。 */
     private static final WeakHashMap<View, Float> HIDDEN = new WeakHashMap<View, Float>();
+    /** 每个首页一个「跟着 tab 切换走」的看门任务：切 tab 不换 Activity，只能自己盯。 */
+    private static final WeakHashMap<Activity, Runnable> WATCHERS = new WeakHashMap<Activity, Runnable>();
+    /** 看门间隔。 */
+    private static final long WATCH_MS = 600L;
 
     private WxTopBar() {
     }
@@ -63,6 +67,7 @@ final class WxTopBar {
             View decor = act.getWindow() == null ? null : act.getWindow().getDecorView();
             if (!(decor instanceof ViewGroup)) return;
             apply((ViewGroup) decor, act);
+            startWatch(act);
             // 首页刚进来时标题栏往往还没量好尺寸，认不到图标。
             // 补两次重试，别让「没生效」变成常态。
             final Activity page = act;
@@ -81,6 +86,58 @@ final class WxTopBar {
         } catch (Throwable t) {
             WechatGlass.warnOnce("topbar", "顶栏处理失败: " + t);
         }
+    }
+
+    /**
+     * 盯着 tab 切换。
+     *
+     * 微信的四个 tab 是同一个 Activity 里的四个页面，切 tab **不会**走 onCreate/onResume，
+     * 所以只在 resume 时判断「是不是我那一页」等于只判断了一次：
+     * 建好的顶栏层会一直挂在窗口上，切到「我」以后照样盖着 —— 用户看到的就是
+     * 「我的界面被加了蒙版」。这里每 600ms 看一眼当前是不是「我」页，是就把层撤掉。
+     */
+    private static void startWatch(final Activity act) {
+        synchronized (WATCHERS) {
+            if (WATCHERS.containsKey(act)) return;
+        }
+        Runnable watch = new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    if (act.isFinishing() || act.isDestroyed()) {
+                        synchronized (WATCHERS) { WATCHERS.remove(act); }
+                        return;
+                    }
+                    View decor = act.getWindow() == null ? null : act.getWindow().getDecorView();
+                    if (!(decor instanceof ViewGroup)) return;
+                    if (!DockPrefs.enabled(act) || !WxDockController.isHost(act)) {
+                        release(act);
+                        stopWatch(act);
+                        return;
+                    } else if (isMeTab((ViewGroup) decor, act)) {
+                        // 「我」页：右上角本来就没有搜索 / ＋，整层撤掉，一个像素都不画。
+                        release(act);
+                    } else {
+                        TopLayer layer;
+                        synchronized (LAYERS) { layer = LAYERS.get(act); }
+                        if (layer == null || layer.getParent() == null) apply((ViewGroup) decor, act);
+                    }
+                } catch (Throwable ignored) {
+                }
+                synchronized (WATCHERS) {
+                    if (WATCHERS.get(act) == this) {
+                        new android.os.Handler(android.os.Looper.getMainLooper())
+                                .postDelayed(this, WATCH_MS);
+                    }
+                }
+            }
+        };
+        synchronized (WATCHERS) { WATCHERS.put(act, watch); }
+        new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(watch, WATCH_MS);
+    }
+
+    private static void stopWatch(Activity act) {
+        synchronized (WATCHERS) { WATCHERS.remove(act); }
     }
 
     private static void applyLater(Activity act) {
@@ -109,6 +166,7 @@ final class WxTopBar {
     }
 
     static void pause(Activity act) {
+        stopWatch(act);
         TopLayer layer;
         synchronized (LAYERS) { layer = LAYERS.get(act); }
         if (layer != null) layer.setActive(false);
@@ -137,8 +195,11 @@ final class WxTopBar {
         }
 
         List<View> icons = findIcons(decor, act, w, h, density);
-        if (icons.isEmpty()) {
-            // 认不到就不动：宁可没效果，也不能把顶栏改成四不像。
+
+        // 再兜一道：右上角没图标、标题也不是「微信 / 通讯录 / 发现」中的一个，
+        // 就当这一页不是前三个 tab（最典型的就是「我」页）——整层撤掉，什么都不画。
+        if (icons.isEmpty() && !hasKnownTitle(decor, act, density)) {
+            release(act);
             return;
         }
 
@@ -151,30 +212,85 @@ final class WxTopBar {
             union.right = Math.max(union.right, loc[0] + v.getWidth());
             union.bottom = Math.max(union.bottom, loc[1] + v.getHeight());
         }
-        if (union.width() <= 0 || union.height() <= 0) return;
 
-        int padH = (int) (13 * density);
-        int padV = (int) (8 * density);
-        Rect capsule = new Rect(union.left - padH, union.top - padV,
-                union.right + padH, union.bottom + padV);
+        // 胶囊几何跟 Dock 一个比例：高度直接取 Dock 的高度（默认 64dp），
+        // 圆角 = 高度的一半（GlassCapsule 里 pillShape 就是这个算法），
+        // 所以看着和底下那条是同一种「胶囊」。
+        // 图标本身不动 —— 胶囊只是套在原来那两颗图标的位置上。
+        int padH = (int) (18 * density);
+        int dockHeight = (int) (DockPrefs.heightDp(act) * density);
+        int capsuleH = Math.max((int) (44 * density), dockHeight);
+        Rect capsule = new Rect();
+        if (union.width() > 0 && union.height() > 0) {
+            int cy = (union.top + union.bottom) / 2;
+            int top = cy - capsuleH / 2;
+            int statusBar = statusBarHeight(act);
+            if (top < statusBar) top = statusBar;
+            // 别往下压到内容区：标题栏底边之上就停。
+            int limit = bandBottomOf(decor, act, density);
+            int bottom = top + capsuleH;
+            if (bottom > limit) {
+                bottom = limit;
+                top = Math.max(statusBar, bottom - capsuleH);
+            }
+            capsule.set(union.left - padH, top, union.right + padH, bottom);
+        }
 
         TopLayer layer;
         synchronized (LAYERS) { layer = LAYERS.get(act); }
-        if (layer == null || layer.getParent() == null) {
-            layer = new TopLayer(act.getApplicationContext());
-            try {
-                decor.addView(layer, new ViewGroup.LayoutParams(
-                        ViewGroup.LayoutParams.MATCH_PARENT,
-                        ViewGroup.LayoutParams.MATCH_PARENT));
-            } catch (Throwable t) {
-                WechatGlass.warnOnce("topbar-add", "顶栏玻璃层挂不上: " + t);
+
+        if (icons.isEmpty()) {
+            // 认不到搜索 / ＋：**渐变照画**，只是不画那颗胶囊。
+            // 上一版这里直接 return，结果连顶栏渐变都一起没了 —— 用户看到的就是「啥都没变」。
+            WechatGlass.warnOnce("topbar-icons-" + act.hashCode(),
+                    "顶栏:右上角没认到搜索/＋，只画渐变不画胶囊");
+            if (layer != null && layer.hasNatives()) {
+                layer.refreshScrim(dark);
                 return;
             }
-            synchronized (LAYERS) { LAYERS.put(act, layer); }
-            WechatGlass.log("顶栏:玻璃胶囊已建立");
+            if (layer == null || layer.getParent() == null) {
+                layer = addLayer(decor, act);
+                if (layer == null) return;
+            }
+            layer.setBandBottom(bandBottomOf(decor, act, density));
+            layer.bind(act, dark, new Rect(), icons, capsule);
+            return;
         }
+
+        if (layer == null || layer.getParent() == null) {
+            layer = addLayer(decor, act);
+            if (layer == null) return;
+        }
+        layer.setBandBottom(bandBottomOf(decor, act, density));
         layer.bind(act, dark, capsule, icons, union);
-        tintTitleBar(decor, act, capsule, w, density, dark);
+    }
+
+    /**
+     * 渐变那条模糊带的底边（窗口坐标）。
+     *
+     * 取标题栏底边再往下多 6dp：模糊最浓的地方就是标题栏那一条，
+     * 再往上（状态栏方向）逐渐淡到完全透明 —— 也就是用户要的「从顶栏往上渐变」。
+     */
+    private static int bandBottomOf(View decor, Activity act, float density) {
+        int bottom = titleBottom(decor, act, density);
+        if (bottom > 0) return bottom + (int) (6 * density);
+        return statusBarHeight(act) + (int) (50 * density);
+    }
+
+    /** 建那层全屏透明的顶栏覆盖层（已经存在就复用）。 */
+    private static TopLayer addLayer(ViewGroup decor, Activity act) {
+        TopLayer layer = new TopLayer(act.getApplicationContext());
+        try {
+            decor.addView(layer, new ViewGroup.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.MATCH_PARENT));
+        } catch (Throwable t) {
+            WechatGlass.warnOnce("topbar-add", "顶栏玻璃层挂不上: " + t);
+            return null;
+        }
+        synchronized (LAYERS) { LAYERS.put(act, layer); }
+        WechatGlass.log("顶栏:覆盖层已建立");
+        return layer;
     }
 
     /** 顶栏换成从上到下的透明渐变（只在标题栏那一条，不动内容区）。 */
@@ -205,6 +321,53 @@ final class WxTopBar {
         } catch (Throwable t) {
             return false;
         }
+    }
+
+    /** 标题栏里有没有「微信 / 通讯录 / 发现」这种已知 tab 标题（找到才认为可以画顶栏）。 */
+    private static boolean hasKnownTitle(View decor, Activity act, float density) {
+        return titleBottom(decor, act, density) > 0;
+    }
+
+    /**
+     * 标题栏底边在窗口里的 y（找不到返回 -1）。
+     *
+     * 渐变要「从顶栏往上淡出去」，所以必须要知道标题栏到底那一行在哪，
+     * 不能再拿胶囊位置凑 —— 胶囊位置会随图标大小漂。
+     */
+    private static int titleBottom(View decor, Activity act, float density) {
+        try {
+            int limitY = statusBarHeight(act) + (int) (58 * density);
+            ArrayDeque<View> queue = new ArrayDeque<View>();
+            IdentityHashMap<View, Boolean> seen = new IdentityHashMap<View, Boolean>();
+            queue.add(decor);
+            int[] loc = new int[2];
+            int budget = 20000;
+            while (!queue.isEmpty() && budget-- > 0) {
+                View v = queue.poll();
+                if (v == null || seen.put(v, Boolean.TRUE) != null) continue;
+                if (v instanceof ViewGroup) {
+                    ViewGroup g = (ViewGroup) v;
+                    for (int i = 0; i < g.getChildCount(); i++) {
+                        View c = g.getChildAt(i);
+                        if (c != null && !(c instanceof TopLayer)) queue.add(c);
+                    }
+                }
+                if (!(v instanceof android.widget.TextView)) continue;
+                if (!v.isShown()) continue;
+                v.getLocationInWindow(loc);
+                if (loc[1] > limitY) continue;
+                CharSequence text = ((android.widget.TextView) v).getText();
+                if (text == null) continue;
+                String value = text.toString().trim();
+                if (value.equals("微信") || value.equals("通讯录") || value.equals("发现")
+                        || value.equals("WeChat") || value.equals("Chats")
+                        || value.equals("Contacts") || value.equals("Discover")) {
+                    return loc[1] + v.getHeight();
+                }
+            }
+        } catch (Throwable ignored) {
+        }
+        return -1;
     }
 
     private static int statusBarHeight(Activity act) {
@@ -311,6 +474,8 @@ final class WxTopBar {
         private boolean active;
         private Activity host;
         private boolean dark;
+        /** 渐变带底边（窗口坐标）；0 = 还不知道，先按默认算。 */
+        private int bandBottomWindow;
 
         /** 顶栏那条模糊的刷新节奏：只抓窄窄一条，300ms 一次足够。 */
         private final Runnable topCapture = new Runnable() {
@@ -363,15 +528,23 @@ final class WxTopBar {
             int h = Math.max(4, (int) (bandH * scale));
             Bitmap bmp = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888);
             try {
+                // 位图代表的是「窗口里 0 ~ bandH 那一条」，而 content 在窗口里是有偏移的
+                // （状态栏 / 标题栏在上方）。以前没加这个偏移，模糊整体往下错了一段，
+                // 看起来就是「渐变位置不对」。
+                int[] contentLoc = new int[2];
+                root.getLocationInWindow(contentLoc);
                 Canvas c = new Canvas(bmp);
                 c.scale(scale, scale);
-                c.clipRect(0, 0, root.getWidth(), bandH);
+                c.translate(0, contentLoc[1]);
+                c.clipRect(0, -contentLoc[1], root.getWidth(),
+                        bandH - contentLoc[1]);
                 root.draw(c);
 
                 Paint mask = new Paint(Paint.ANTI_ALIAS_FLAG);
+                // 方向：顶栏那一条最实，往上逐渐淡到透明（不是从上往下糊）。
                 mask.setShader(new LinearGradient(0, 0, 0, bandH,
-                        new int[]{0xFFFFFFFF, 0xF2FFFFFF, 0x66FFFFFF, 0x00FFFFFF},
-                        new float[]{0f, 0.42f, 0.78f, 1f}, Shader.TileMode.CLAMP));
+                        new int[]{0x00FFFFFF, 0x55FFFFFF, 0xD8FFFFFF, 0xFFFFFFFF},
+                        new float[]{0f, 0.30f, 0.76f, 1f}, Shader.TileMode.CLAMP));
                 mask.setXfermode(new android.graphics.PorterDuffXfermode(
                         android.graphics.PorterDuff.Mode.DST_IN));
                 Canvas mc = new Canvas(bmp);
@@ -406,9 +579,10 @@ final class WxTopBar {
 
             int[] self = new int[2];
             getLocationInWindow(self);
-            // 渐变模糊带：从屏幕顶端一直铺到胶囊下沿再往外散一点。
-            int bandBottom = Math.max(capsuleInWindow.bottom - self[1] + dp(16),
-                    statusBarHeight(act) + dp(64));
+            // 渐变模糊带：底边 = 标题栏底边，往上一直淡到屏幕顶端。
+            // 之前是「胶囊下沿再往下散」，所以模糊会糊到内容区，位置也是错的。
+            int bandBottom = bandBottomWindow > 0 ? bandBottomWindow - self[1]
+                    : statusBarHeight(act) + dp(50);
             scrimBounds.set(0, 0, getWidth(), Math.max(0, bandBottom));
             invalidate();
 
@@ -483,6 +657,27 @@ final class WxTopBar {
             }
         }
 
+        void setBandBottom(int windowY) {
+            if (windowY > 0) bandBottomWindow = windowY;
+        }
+
+        /** 已经包住原生图标了（不是那种只画渐变的空壳）。 */
+        boolean hasNatives() {
+            return natives[0] != null || natives[1] != null;
+        }
+
+        /** 只更新渐变那一条（图标没认到时用）。 */
+        void refreshScrim(boolean isDark) {
+            dark = isDark;
+            setActive(true);
+            int[] self = new int[2];
+            getLocationInWindow(self);
+            int bandBottom = bandBottomWindow > 0 ? bandBottomWindow - self[1]
+                    : statusBarHeight(host) + dp(50);
+            scrimBounds.set(0, 0, getWidth(), Math.max(0, bandBottom));
+            invalidate();
+        }
+
         void setActive(boolean value) {
             active = value;
             glass.setActive(value);
@@ -538,6 +733,10 @@ final class WxTopBar {
         protected void onDraw(Canvas canvas) {
             // 顶栏渐变模糊：把背后那一条画面以低分辨率铺上来（放大本身就是模糊），
             // 再用 alpha 渐变让它从上往下自然淡出。
+            if (scrimBounds.width() <= 0 && getWidth() > 0) {
+                scrimBounds.set(0, 0, getWidth(),
+                        Math.max(statusBarHeight(host) + dp(64), dp(80)));
+            }
             if (scrimBounds.height() > 0) {
                 if (topSample != null && !topSample.isRecycled()) {
                     scrimDst.set(0, 0, getWidth(),
@@ -545,10 +744,11 @@ final class WxTopBar {
                     canvas.drawBitmap(topSample, null, scrimDst, topPaint);
                 }
                 // 再压一层很淡的雾，纯白 / 纯黑背景上也有层次，但不会糊住标题。
+                // 和上面同一方向：底下（标题栏）最浓，往上淡掉。
                 scrim.setShader(new LinearGradient(0, 0, 0, scrimBounds.height(),
-                        dark ? new int[]{0x33000000, 0x14000000, 0x00000000}
-                                : new int[]{0x2EFFFFFF, 0x12FFFFFF, 0x00FFFFFF},
-                        new float[]{0f, 0.55f, 1f}, Shader.TileMode.CLAMP));
+                        dark ? new int[]{0x00000000, 0x14000000, 0x33000000}
+                                : new int[]{0x00FFFFFF, 0x12FFFFFF, 0x2EFFFFFF},
+                        new float[]{0f, 0.45f, 1f}, Shader.TileMode.CLAMP));
                 canvas.drawRect(0, 0, getWidth(), scrimBounds.height(), scrim);
                 scrim.setShader(null);
             }

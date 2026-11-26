@@ -35,6 +35,10 @@ final class DockPrefs {
     private static final String KEY_MENU_TRANSPARENT = "menu_transparent";
     /** 抓不到视频画面时，用界面主色垫底（不开就是原来的纯黑玻璃）。 */
     private static final String KEY_VIDEO_TINT = "video_tint_fallback";
+    /** 消息防撤回：拦住把消息改写成「撤回了一条消息」的那次落库。 */
+    private static final String KEY_ANTI_REVOKE = "anti_revoke";
+    /** 聊天页头像上方显示时分秒。 */
+    private static final String KEY_CHAT_TIME = "chat_time";
     /** 配置版本号：模块里的设置页写盘时打一个时间戳，宿主这边比它新才覆盖。 */
     private static final String KEY_REV = "settings_rev";
 
@@ -127,6 +131,24 @@ final class DockPrefs {
     /** 日志开关（默认开）：关掉只保留警告/错误。 */
     static boolean logEnabled(Context context) {
         return readBool(context, KEY_LOG, true);
+    }
+
+    /** 消息防撤回。默认开。 */
+    static boolean antiRevoke(Context context) {
+        return readBool(context, KEY_ANTI_REVOKE, true);
+    }
+
+    static void setAntiRevoke(Context context, boolean value) {
+        writeBool(context, KEY_ANTI_REVOKE, value);
+    }
+
+    /** 聊天页头像上方显示时分秒。默认开。 */
+    static boolean chatTime(Context context) {
+        return readBool(context, KEY_CHAT_TIME, true);
+    }
+
+    static void setChatTime(Context context, boolean value) {
+        writeBool(context, KEY_CHAT_TIME, value);
     }
 
     /** 0=跟随系统，1=浅色，2=深色。 */
@@ -260,6 +282,8 @@ final class DockPrefs {
             editor.putBoolean(KEY_MENU_TRANSPARENT,
                     remote.getBoolean(KEY_MENU_TRANSPARENT, true));
             editor.putBoolean(KEY_VIDEO_TINT, remote.getBoolean(KEY_VIDEO_TINT, true));
+            editor.putBoolean(KEY_ANTI_REVOKE, remote.getBoolean(KEY_ANTI_REVOKE, true));
+            editor.putBoolean(KEY_CHAT_TIME, remote.getBoolean(KEY_CHAT_TIME, true));
             editor.putLong(KEY_REV, remoteRev);
             editor.apply();
             WechatGlass.setVerbose(remote.getBoolean(KEY_LOG, true));

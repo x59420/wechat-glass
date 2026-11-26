@@ -31,15 +31,15 @@ import de.robv.android.xposed.XC_MethodHook;
 import de.robv.android.xposed.XposedBridge;
 
 /**
- * 微信里的设置入口 + 「＋」弹层的玻璃底。
+ * 「＋」弹层的玻璃底 + 面板出现时让 Dock 让位。
  *
- * 上一版最大的问题是：入口只在「页面 resume」那一刻找一次，而微信的「＋」面板
- * 是**浮在首页上面的一层**，既不换 Activity、也不一定是 PopupWindow，
- * 那一刻根本还没创建出来，所以永远找不到 —— 用户看到的就是「入口一直看不见」。
+ * 注意：这里**不再往微信里插任何设置入口**。设置只有两个地方能进：
+ *   1. 微信「我 → 设置」里那一行（WxSettingsEntry）；
+ *   2. 桌面上的 wxglass 图标（SettingsActivity）。
  *
- * 现在改成盯着整棵视图树：每个页面挂一个 OnGlobalLayoutListener，
- * 只要「扫一扫 / 收付款 / 添加朋友」这些条目出现，就当场把入口挂上去；
- * 面板收起（条目消失）就把入口撤掉。PopupWindow 那条路也同时保留。
+ * 面板是靠盯着整棵视图树认的：每个页面挂一个 OnGlobalLayoutListener，
+ * 只要「扫一扫 / 收付款 / 添加朋友」这些条目同时出现，就认为面板开了 ——
+ * 这时把 Dock 收起来，并把面板底色换成同一套玻璃。
  */
 final class WxPlusPage {
 
@@ -191,11 +191,10 @@ final class WxPlusPage {
             WxDockController.setCovered(act, true);
             watchPanelClose(act);
         }
-        if (injectRow(act, panel, markers)) {
-            detachPillOnly(act);
-        } else {
-            attachPill(act, panel);
-        }
+        // 微信里不再插任何设置入口（面板里的那一行 / 浮在外面那颗胶囊都去掉了）。
+        // 设置只留「我 → 设置」里那一条 + 桌面 wxglass 图标，少一处少一处出错。
+        removeRow();
+        detachPillOnly(act);
     }
 
     /** 找所有「＋」面板条目文字。 */
@@ -552,8 +551,9 @@ final class WxPlusPage {
         }
     }
 
-    /** PopupWindow 形态的「＋」面板：竖排能插就插一行，否则在里面浮一颗小胶囊。 */
+    /** PopupWindow 形态的「＋」面板：这里只做玻璃底，不再插设置入口。 */
     private static void injectPopupRow(ViewGroup content, boolean dark, float density) {
+        if (Boolean.TRUE) return;
         if (content instanceof LinearLayout
                 && ((LinearLayout) content).getOrientation() == LinearLayout.VERTICAL) {
             LinearLayout list = (LinearLayout) content;

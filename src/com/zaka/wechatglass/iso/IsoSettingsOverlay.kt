@@ -134,6 +134,8 @@ private class IsoSettingsState(context: Context) : SettingsModel {
     override val bottomTransparent = mutableStateOf(prefs.getBoolean("bottom_transparent", true))
     override val menuTransparent = mutableStateOf(prefs.getBoolean("menu_transparent", true))
     override val videoTint = mutableStateOf(prefs.getBoolean("video_tint_fallback", true))
+    override val antiRevoke = mutableStateOf(prefs.getBoolean("anti_revoke", true))
+    override val chatTime = mutableStateOf(prefs.getBoolean("chat_time", true))
     override val height = mutableStateOf(prefs.getInt("dock_height_dp", 64).coerceIn(52, 88))
     override val tabWidth = mutableStateOf(prefs.getInt("tab_width_dp", 76).coerceIn(60, 100))
     override val sideMargin = mutableStateOf(prefs.getInt("side_margin_dp", 24).coerceIn(12, 40))
@@ -143,6 +145,8 @@ private class IsoSettingsState(context: Context) : SettingsModel {
     override fun setShowPlus(value: Boolean) { showPlus.value = value; persistAndPush() }
     override fun setShowLabels(value: Boolean) { showLabels.value = value; persistAndPush() }
     override fun setLogEnabled(value: Boolean) { logEnabled.value = value; persistAndPush() }
+    override fun setAntiRevoke(value: Boolean) { antiRevoke.value = value; persistAndPush() }
+    override fun setChatTime(value: Boolean) { chatTime.value = value; persistAndPush() }
     override fun setHeight(value: Int) { height.value = value.coerceIn(52, 88); persistAndPush() }
     override fun setTabWidth(value: Int) { tabWidth.value = value.coerceIn(60, 100); persistAndPush() }
     override fun setSideMargin(value: Int) { sideMargin.value = value.coerceIn(12, 40); persistAndPush() }
@@ -161,7 +165,7 @@ private class IsoSettingsState(context: Context) : SettingsModel {
         try {
             app.sendBroadcast(
                 Intent("com.zaka.wechatglass.SETTINGS_CHANGED")
-                    .setPackage("com.ss.android.ugc.aweme")
+                    .setPackage("com.tencent.mm")
                     .putExtra("theme_mode", mode)
                     .putExtra("bottom_transparent", bottomTransparent.value)
                     .putExtra("menu_transparent", menuTransparent.value)
@@ -226,11 +230,13 @@ private class IsoSettingsState(context: Context) : SettingsModel {
             .putBoolean("bottom_transparent", bottomTransparent.value)
             .putBoolean("menu_transparent", menuTransparent.value)
             .putBoolean("video_tint_fallback", videoTint.value)
+            .putBoolean("anti_revoke", antiRevoke.value)
+            .putBoolean("chat_time", chatTime.value)
             .putLong("settings_rev", System.currentTimeMillis())
             .commit()
 
         val intent = Intent("com.zaka.wechatglass.SETTINGS_CHANGED")
-            .setPackage("com.ss.android.ugc.aweme")
+            .setPackage("com.tencent.mm")
             .putExtra("enabled", enabled.value)
             .putExtra("show_plus", showPlus.value)
             .putExtra("show_labels", showLabels.value)
@@ -245,6 +251,8 @@ private class IsoSettingsState(context: Context) : SettingsModel {
             .putExtra("video_tint", videoTint.value)
             .putExtra("glass_alpha", glassAlpha.value)
             .putExtra("hide_glass_background", hideBackground.value)
+            .putExtra("anti_revoke", antiRevoke.value)
+            .putExtra("chat_time", chatTime.value)
         app.sendBroadcast(intent)
     }
 }

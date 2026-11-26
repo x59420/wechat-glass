@@ -543,6 +543,14 @@ final class WxDockController {
                     } else if (visible || iso.view().getVisibility() == View.VISIBLE) {
                         shown[0] = false;
                         hideNow(act);
+                        if (top != null && top != act) {
+                            // 让日志说清楚是谁把 Dock 顶掉的，下次看日志就知道判断链对不对。
+                            WechatGlass.warnOnce("dock-hide-" + top.getClass().getName(),
+                                    "底栏:前台是 " + top.getClass().getSimpleName() + "，已收起");
+                        } else if (covered) {
+                            WechatGlass.warnOnce("dock-hide-covered",
+                                    "底栏:「＋」面板打开中，已收起");
+                        }
                     }
                     backdrop.setActive(wantShow);
 

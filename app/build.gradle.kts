@@ -16,8 +16,8 @@ android {
         applicationId = "com.zaka.wechatglass"
         minSdk = 26
         targetSdk = 34
-        versionCode = 7
-        versionName = "0.4.0"
+        versionCode = 8
+        versionName = "0.5.0"
     }
 
     sourceSets {
@@ -87,4 +87,6 @@ dependencies {
     implementation("top.yukonga.miuix.kmp:miuix-ui-android:0.9.4")
     implementation("top.yukonga.miuix.kmp:miuix-blur-android:0.9.4")
     compileOnly(files(rootProject.file("libs/api-82.jar")))
+    // 只在编译期用一下 RecyclerView 的类型，运行期直接用微信进程里那一份，不重复打包。
+    compileOnly("androidx.recyclerview:recyclerview:1.4.0")
 }

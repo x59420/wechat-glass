@@ -28,7 +28,7 @@ public final class WechatGlass {
     static final String TAG = "wxglass";
 
     /** 版本号，和 build.gradle.kts 里的 versionName 一起改。 */
-    static final String VER = "0.4.0";
+    static final String VER = "0.5.0";
 
     private static volatile boolean verbose = true;
     private static final Set<String> SAID = new HashSet<String>();
@@ -101,6 +101,16 @@ public final class WechatGlass {
                 }, 1200L);
             }
         } catch (Throwable ignored) {
+        }
+    }
+
+    /** 宿主进程里拿当前 Application；拿来读配置、弹提示。拿不到返回 null。 */
+    static Context context() {
+        try {
+            Object app = app();
+            return app instanceof Context ? (Context) app : null;
+        } catch (Throwable t) {
+            return null;
         }
     }
 

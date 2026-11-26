@@ -10,6 +10,11 @@
 -keep class de.robv.android.xposed.** { *; }
 -dontwarn de.robv.android.xposed.**
 
+# RecyclerView 只在编译期取个类型，运行期用微信进程里那一份（compileOnly），
+# 所以 R8 会看到"引用但没有实现"，告诉它这是故意的。
+-dontwarn androidx.recyclerview.**
+-dontwarn androidx.annotation.**
+
 -keepattributes *Annotation*,Signature,InnerClasses,EnclosingMethod
 
 # 只做收缩和优化，不做重命名：避免 Compose/LSPosed 任何按名字走的路径被改坏。

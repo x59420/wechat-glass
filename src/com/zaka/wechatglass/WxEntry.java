@@ -63,6 +63,8 @@ public final class WxEntry implements IXposedHookLoadPackage, IXposedHookZygoteI
         hookTabBarCreated(lp.classLoader);
         WxPlusPage.hook(lp.classLoader);
         WxSettingsEntry.hook(lp.classLoader);
+        WxAntiRevoke.hook(lp.classLoader);
+        WxChatTime.hook(lp.classLoader);
 
         // 装没装上，一眼就能看出来：进微信弹一条，省得再来回猜。
         WechatGlass.toast(WechatGlass.VER + " 已加载");
@@ -131,6 +133,8 @@ public final class WxEntry implements IXposedHookLoadPackage, IXposedHookZygoteI
                         final Activity act = (Activity) self;
                         WxDockController.onAnyResume(act);
                         WxSettingsEntry.maybeInstall(act);
+                        WxChatTime.maybeAttach(act);
+                        WxTopBar.resume(act);
                         View decor = act.getWindow() == null
                                 ? null : act.getWindow().getDecorView();
                         if (decor != null) {
@@ -327,6 +331,7 @@ public final class WxEntry implements IXposedHookLoadPackage, IXposedHookZygoteI
                         WxDockController.onAnyResume(activity);
                         WxSettingsEntry.maybeInstall(activity);
                         WxPlusPage.watch(activity);
+                        WxChatTime.maybeAttach(activity);
                         final Activity page = activity;
                         View decor = activity.getWindow() == null
                                 ? null : activity.getWindow().getDecorView();
@@ -349,6 +354,9 @@ public final class WxEntry implements IXposedHookLoadPackage, IXposedHookZygoteI
                     try {
                         WxDockController.onAnyPause(activity);
                         WxPlusPage.detach(activity);
+                        WxChatTime.detach(activity);
+                        // 页面切走就停止顶栏那一路的连续截图采样，回来再开。
+                        WxTopBar.pause(activity);
                     } catch (Throwable t) {
                         WechatGlass.warnOnce("lifecycle-pause", "onActivityPaused 处理失败: " + t);
                     }
@@ -366,6 +374,8 @@ public final class WxEntry implements IXposedHookLoadPackage, IXposedHookZygoteI
                 public void onActivityDestroyed(Activity activity) {
                     try {
                         WxDockController.release(activity);
+                        WxChatTime.detach(activity);
+                        WxTopBar.release(activity);
                     } catch (Throwable t) {
                         WechatGlass.warnOnce("lifecycle-destroy", "onActivityDestroyed 处理失败: " + t);
                     }
