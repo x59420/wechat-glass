@@ -379,6 +379,12 @@ final class WxDockController {
         final View content = act.findViewById(android.R.id.content);
         if (!(decor instanceof ViewGroup) || content == null) return false;
         if (content.getWidth() < 50 || content.getHeight() < 50) return false;
+        // 已经在聊天 / 添加朋友 / 二级页：不要安装 Dock。
+        if (SUB_PAGE || hasChatInput(decor)
+                || (hasNonMainPageTitle(decor) && !hasMainTitle(decor))) {
+            SUB_PAGE = true;
+            return true;
+        }
 
         ViewGroup bar = WxTabBar.find(decor, act);
         if (bar == null) return false;
@@ -490,7 +496,7 @@ final class WxDockController {
             return true;
         }
 
-        WechatGlass.toast(act, "wxglass：Dock 已挂上");
+        WechatGlass.log("Dock 已挂上");
 
         synchronized (OVERLAYS) { OVERLAYS.put(act, iso); }
         synchronized (BACKDROPS) { BACKDROPS.put(act, backdrop); }

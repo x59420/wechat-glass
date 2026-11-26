@@ -244,6 +244,7 @@ final class WxChatTime {
                     if (!logged) {
                         logged = true;
                         WechatGlass.log("聊天时间:未找到消息列表");
+                        dumpLists();
                     }
                     return;
                 }
@@ -293,6 +294,38 @@ final class WxChatTime {
         }
 
         // -------------------------------------------------------- 找列表 / 行 / 头像
+
+        private void dumpLists() {
+            try {
+                View decor = host.getWindow() == null ? null : host.getWindow().getDecorView();
+                if (decor == null) return;
+                java.util.ArrayDeque<View> q = new java.util.ArrayDeque<View>();
+                java.util.IdentityHashMap<View, Boolean> seen =
+                        new java.util.IdentityHashMap<View, Boolean>();
+                q.add(decor);
+                int n = 0;
+                while (!q.isEmpty() && n < 40) {
+                    View v = q.poll();
+                    if (v == null || seen.put(v, Boolean.TRUE) != null) continue;
+                    String c = v.getClass().getName();
+                    String l = c.toLowerCase(Locale.ROOT);
+                    if (l.contains("recycler") || l.contains("listview")
+                            || l.contains("chat") || l.contains("scroll")) {
+                        WechatGlass.log("聊天时间:view " + c + " "
+                                + v.getWidth() + "x" + v.getHeight()
+                                + " shown=" + v.isShown());
+                        n++;
+                    }
+                    if (v instanceof ViewGroup) {
+                        ViewGroup g = (ViewGroup) v;
+                        for (int i = 0; i < g.getChildCount(); i++) {
+                            q.add(g.getChildAt(i));
+                        }
+                    }
+                }
+            } catch (Throwable ignored) {
+            }
+        }
 
         private View findList() {
             try {
