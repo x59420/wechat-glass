@@ -339,7 +339,10 @@ final class WxChatTime {
                 while (!stack.isEmpty() && guard++ < 4000) {
                     View v = stack.remove(stack.size() - 1);
                     if (v == null) continue;
-                    if (v instanceof RecyclerView || v instanceof ListView) {
+                    String vc = v.getClass().getName();
+                    boolean isList = vc.contains("RecyclerView") || vc.contains("ListView")
+                            || vc.contains("WxRecyclerView") || vc.contains("MMListView");
+                    if (isList) {
                         if (!v.isShown() || v.getVisibility() != View.VISIBLE) continue;
                         int area = v.getWidth() * v.getHeight();
                         if (area > bestArea) {
@@ -363,37 +366,37 @@ final class WxChatTime {
         }
 
         private int childCount(View list) {
-            if (list instanceof RecyclerView) return ((RecyclerView) list).getChildCount();
-            if (list instanceof ListView) return ((ListView) list).getChildCount();
-            return 0;
+            return list instanceof ViewGroup ? ((ViewGroup) list).getChildCount() : 0;
         }
 
         private View childAt(View list, int index) {
-            if (list instanceof RecyclerView) return ((RecyclerView) list).getChildAt(index);
-            if (list instanceof ListView) return ((ListView) list).getChildAt(index);
-            return null;
+            return list instanceof ViewGroup ? ((ViewGroup) list).getChildAt(index) : null;
         }
 
         /** 行 → 消息对象 → 时间。 */
         private long timeOfRow(View list, int childIndex, View row) {
-            int position;
-            Object item = null;
+            int position = -1;
+            Object adapter = null;
             try {
-                if (list instanceof RecyclerView) {
-                    RecyclerView rv = (RecyclerView) list;
-                    position = rv.getChildAdapterPosition(rv.getChildAt(childIndex));
-                    if (position < 0) return 0L;
-                    item = itemAt(rv.getAdapter(), position);
-                } else if (list instanceof ListView) {
-                    ListView lv = (ListView) list;
-                    position = lv.getFirstVisiblePosition() + childIndex;
-                    item = itemAt(lv.getAdapter(), position);
-                } else {
-                    return 0L;
-                }
-            } catch (Throwable t) {
-                return 0L;
+                Method gap = list.getClass().getMethod("getChildAdapterPosition", View.class);
+                Object p = gap.invoke(list, row);
+                if (p instanceof Integer) position = (Integer) p;
+                Method ga = list.getClass().getMethod("getAdapter");
+                adapter = ga.invoke(list);
+            } catch (Throwable ignored) {
             }
+            if (position < 0) {
+                try {
+                    Method fp = list.getClass().getMethod("getFirstVisiblePosition");
+                    Object p = fp.invoke(list);
+                    if (p instanceof Integer) position = (Integer) p + childIndex;
+                    Method ga = list.getClass().getMethod("getAdapter");
+                    adapter = ga.invoke(list);
+                } catch (Throwable ignored) {
+                }
+            }
+            if (position < 0 || adapter == null) return 0L;
+            Object item = itemAt(adapter, position);
             if (item == null) return 0L;
 
             long now = android.os.SystemClock.uptimeMillis();
