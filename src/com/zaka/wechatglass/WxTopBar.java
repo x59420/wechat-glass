@@ -485,6 +485,14 @@ final class WxTopBar {
         return findTitleView(decor, act, density) != null;
     }
 
+    /** 去掉未读角标：微信(1) -> 微信。 */
+    private static String baseTitle(String text) {
+        if (text == null) return "";
+        return text.trim()
+                .replaceAll("\\s*\\(\\d+\\)\\s*$", "")
+                .replaceAll("\\s+\\d+$", "").trim();
+    }
+
     /** 找出标题栏那个标题 View（微信 / 通讯录 / 发现）。 */
     private static View findTitleView(View decor, Activity act, float density) {
         try {
@@ -510,7 +518,7 @@ final class WxTopBar {
                 if (loc[1] > limitY) continue;
                 CharSequence text = ((android.widget.TextView) v).getText();
                 if (text == null) continue;
-                String value = text.toString().trim();
+                String value = baseTitle(text.toString());
                 if (value.equals("微信") || value.equals("通讯录") || value.equals("发现")
                         || value.equals("我") || value.equals("WeChat") || value.equals("Chats")
                         || value.equals("Contacts") || value.equals("Discover")
