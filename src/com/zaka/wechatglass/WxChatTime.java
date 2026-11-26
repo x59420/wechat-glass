@@ -240,7 +240,13 @@ final class WxChatTime {
             if (!alive) return;
             try {
                 View list = findList();
-                if (list == null) return;
+                if (list == null) {
+                    if (!logged) {
+                        logged = true;
+                        WechatGlass.log("聊天时间:未找到消息列表");
+                    }
+                    return;
+                }
                 getLocationInWindow(selfLoc);
 
                 int children = childCount(list);
