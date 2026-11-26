@@ -513,6 +513,12 @@ final class WxPlusPage {
                     boolean surfaceDark = dark || hasLightText(content, 0);
                     GlassDrawable glass = new GlassDrawable(20 * density, surfaceDark, true);
                     content.setBackground(glass);
+                    // 菜单本身内容不多，固定高度即可，不要出现滚动条。
+                    content.setVerticalScrollBarEnabled(false);
+                    content.setOverScrollMode(View.OVER_SCROLL_NEVER);
+                    if (content instanceof android.widget.ScrollView) {
+                        ((android.widget.ScrollView) content).setFillViewport(true);
+                    }
                     try {
                         content.setElevation(12f * density);
                     } catch (Throwable ignored) {

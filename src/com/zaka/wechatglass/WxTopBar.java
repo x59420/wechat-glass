@@ -49,6 +49,9 @@ final class WxTopBar {
     private static final WeakHashMap<Activity, Runnable> WATCHERS = new WeakHashMap<Activity, Runnable>();
     /** 上一次认到的两颗图标：布局回调偶尔会短暂认不到，不能因此把整层撤掉。 */
     private static final WeakHashMap<Activity, List<View>> ICON_CACHE = new WeakHashMap<Activity, List<View>>();
+    /** 胶囊第一次算出来的位置：之后只要屏幕尺寸没变就钉死，避免每 600ms 重算导致漂移。 */
+    private static final WeakHashMap<Activity, Rect> CAPSULE_CACHE = new WeakHashMap<Activity, Rect>();
+    private static final WeakHashMap<Activity, int[]> CAPSULE_SIZE = new WeakHashMap<Activity, int[]>();
     /** 看门间隔。 */
     private static final long WATCH_MS = 600L;
 
@@ -156,6 +159,10 @@ final class WxTopBar {
     static void release(Activity act) {
         if (act == null) return;
         synchronized (ICON_CACHE) { ICON_CACHE.remove(act); }
+        synchronized (CAPSULE_CACHE) {
+            CAPSULE_CACHE.remove(act);
+            CAPSULE_SIZE.remove(act);
+        }
         TopLayer layer;
         synchronized (LAYERS) { layer = LAYERS.remove(act); }
         if (layer != null) {
@@ -196,6 +203,12 @@ final class WxTopBar {
             release(act);
             return;
         }
+        // 聊天页 / 联系人页也挂在同一个 LauncherUI 上，标题会变成联系人名。
+        // 这时必须把顶栏层撤掉，否则会盖住聊天页原生标题。
+        if (!isMainTabPage(decor, act, density)) {
+            release(act);
+            return;
+        }
 
         List<View> icons = findIcons(decor, act, w, h, density);
 
@@ -218,6 +231,12 @@ final class WxTopBar {
             synchronized (ICON_CACHE) { ICON_CACHE.put(act, new ArrayList<View>(icons)); }
         }
 
+        View actionBar = findActionBar(decor, act, density);
+        if (actionBar == null) {
+            release(act);
+            return;
+        }
+
         Rect union = new Rect(Integer.MAX_VALUE, Integer.MAX_VALUE, 0, 0);
         int[] loc = new int[2];
         for (View v : icons) {
@@ -232,26 +251,37 @@ final class WxTopBar {
             return;
         }
 
-        // 胶囊几何按「原位」来：高度跟着那颗图标走（图标高 + 上下各留 9dp），
-        // 不跟 Dock 对齐 —— 标题栏就那么高，硬塞一个 64dp 的大胶囊反而不协调。
-        // 圆角仍然是高度的一半，所以观感和 Dock 是同一种「胶囊」。
-        // 图标本身不动，胶囊只是套在原来那两颗图标的位置上。
+        // 官方实现锚的是 ActionBarContainer，而不是在整棵树里找“最后两个可点 View”。
+        // 后者会随微信布局重排选中不同控件，胶囊就到处跑。
+        int[] abLoc = new int[2];
+        actionBar.getLocationInWindow(abLoc);
+        int abW = actionBar.getWidth();
+        int abH = actionBar.getHeight();
         int padH = (int) (14 * density);
         int padV = (int) (9 * density);
         int minH = (int) (34 * density);
         int maxH = (int) (48 * density);
-        int capsuleH = Math.max(minH, Math.min(maxH, union.height() + padV * 2));
-        int cy = (union.top + union.bottom) / 2;
-        int top = cy - capsuleH / 2;
+        int capsuleH = Math.max(minH, Math.min(maxH, abH - padV));
+        int top = abLoc[1] + (abH - capsuleH) / 2;
         int statusBar = statusBarHeight(act);
         if (top < statusBar) top = statusBar;
-        int limit = bandBottomOf(decor, act, density);
-        int bottom = top + capsuleH;
-        if (bottom > limit) {
-            bottom = limit;
-            top = Math.max(statusBar, bottom - capsuleH);
+        int right = abLoc[0] + abW - padH;
+        int iconW = icons.get(0).getWidth();
+        int capsuleW = Math.max((int) (76 * density),
+                Math.min((int) (104 * density), iconW * icons.size() + padH * 2));
+        int left = right - capsuleW;
+        Rect capsule = new Rect(left, top, right, top + capsuleH);
+        synchronized (CAPSULE_CACHE) {
+            Rect cachedCapsule = CAPSULE_CACHE.get(act);
+            int[] cachedSize = CAPSULE_SIZE.get(act);
+            if (cachedCapsule != null && cachedSize != null
+                    && cachedSize[0] == w && cachedSize[1] == h) {
+                capsule.set(cachedCapsule);
+            } else {
+                CAPSULE_CACHE.put(act, new Rect(capsule));
+                CAPSULE_SIZE.put(act, new int[]{w, h});
+            }
         }
-        Rect capsule = new Rect(union.left - padH, top, union.right + padH, bottom);
 
         TopLayer layer;
         synchronized (LAYERS) { layer = LAYERS.get(act); }
@@ -342,6 +372,55 @@ final class WxTopBar {
         } catch (Throwable t) {
             return false;
         }
+    }
+
+    /** 官方模块的锚点：androidx.appcompat.widget.ActionBarContainer。 */
+    private static View findActionBar(View root, Activity act, float density) {
+        try {
+            int limitY = statusBarHeight(act) + (int) (96 * density);
+            ArrayDeque<View> queue = new ArrayDeque<View>();
+            IdentityHashMap<View, Boolean> seen = new IdentityHashMap<View, Boolean>();
+            queue.add(root);
+            View best = null;
+            int bestW = 0;
+            int budget = 20000;
+            int[] loc = new int[2];
+            while (!queue.isEmpty() && budget-- > 0) {
+                View v = queue.poll();
+                if (v == null || seen.put(v, Boolean.TRUE) != null) continue;
+                if (v instanceof ViewGroup) {
+                    ViewGroup g = (ViewGroup) v;
+                    for (int i = 0; i < g.getChildCount(); i++) {
+                        View c = g.getChildAt(i);
+                        if (c != null && !(c instanceof TopLayer)) queue.add(c);
+                    }
+                }
+                if (!v.isShown() || v.getWidth() <= 0 || v.getHeight() <= 0) continue;
+                String name = v.getClass().getName();
+                if (!name.contains("ActionBarContainer")) continue;
+                v.getLocationInWindow(loc);
+                if (loc[1] > limitY) continue;
+                if (v.getWidth() > bestW) {
+                    bestW = v.getWidth();
+                    best = v;
+                }
+            }
+            return best;
+        } catch (Throwable t) {
+            return null;
+        }
+    }
+
+    /** 只有微信 / 通讯录 / 发现三个主 tab 才画顶栏。 */
+    private static boolean isMainTabPage(ViewGroup decor, Activity act, float density) {
+        View title = findTitleView(decor, act, density);
+        if (!(title instanceof android.widget.TextView)) return false;
+        CharSequence text = ((android.widget.TextView) title).getText();
+        if (text == null) return false;
+        String value = text.toString().trim();
+        return value.equals("微信") || value.equals("通讯录") || value.equals("发现")
+                || value.equals("WeChat") || value.equals("Chats")
+                || value.equals("Contacts") || value.equals("Discover");
     }
 
     /** 标题栏里有没有「微信 / 通讯录 / 发现」这种已知 tab 标题（找到才认为可以画顶栏）。 */
