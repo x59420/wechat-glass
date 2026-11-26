@@ -97,6 +97,17 @@ final class WxAntiRevoke {
                                         break;
                                     }
                                 }
+                                if (content == null) {
+                                    // 新版可能只把 type 改成 10000/10002，正文由服务端下发。
+                                    Integer type = values.getAsInteger("type");
+                                    String lowerTable = table == null ? ""
+                                            : table.toLowerCase(java.util.Locale.ROOT);
+                                    if (type != null && (type == 10000 || type == 10002)
+                                            && (lowerTable.contains("message")
+                                            || lowerTable.contains("msg"))) {
+                                        content = "撤回(type=" + type + ")";
+                                    }
+                                }
                                 if (content == null) return;
                                 // 自己撤回（"你撤回了一条消息"）放行。
                                 if (content.trim().startsWith("你")) return;

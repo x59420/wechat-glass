@@ -231,12 +231,6 @@ final class WxTopBar {
             synchronized (ICON_CACHE) { ICON_CACHE.put(act, new ArrayList<View>(icons)); }
         }
 
-        View actionBar = findActionBar(decor, act, density);
-        if (actionBar == null) {
-            release(act);
-            return;
-        }
-
         Rect union = new Rect(Integer.MAX_VALUE, Integer.MAX_VALUE, 0, 0);
         int[] loc = new int[2];
         for (View v : icons) {
@@ -251,36 +245,21 @@ final class WxTopBar {
             return;
         }
 
-        // 官方实现锚的是 ActionBarContainer，而不是在整棵树里找“最后两个可点 View”。
-        // 后者会随微信布局重排选中不同控件，胶囊就到处跑。
-        int[] abLoc = new int[2];
-        actionBar.getLocationInWindow(abLoc);
-        int abW = actionBar.getWidth();
-        int abH = actionBar.getHeight();
+        // 固定钉在屏幕右上角：不再依赖 ActionBarContainer / 图标位置，
+        // 微信布局重排、切 tab 都不会让胶囊漂移。
         int padH = (int) (14 * density);
-        int padV = (int) (9 * density);
-        int minH = (int) (34 * density);
-        int maxH = (int) (48 * density);
-        int capsuleH = Math.max(minH, Math.min(maxH, abH - padV));
-        int top = abLoc[1] + (abH - capsuleH) / 2;
+        int minH = (int) (38 * density);
+        int maxH = (int) (46 * density);
+        int capsuleH = Math.min(maxH, Math.max(minH, union.height() + (int) (10 * density)));
         int statusBar = statusBarHeight(act);
-        if (top < statusBar) top = statusBar;
-        int right = abLoc[0] + abW - padH;
-        int iconW = icons.get(0).getWidth();
-        int capsuleW = Math.max((int) (76 * density),
-                Math.min((int) (104 * density), iconW * icons.size() + padH * 2));
+        int top = statusBar + (int) (6 * density);
+        int right = w - padH;
+        int capsuleW = (int) (84 * density);
         int left = right - capsuleW;
         Rect capsule = new Rect(left, top, right, top + capsuleH);
         synchronized (CAPSULE_CACHE) {
-            Rect cachedCapsule = CAPSULE_CACHE.get(act);
-            int[] cachedSize = CAPSULE_SIZE.get(act);
-            if (cachedCapsule != null && cachedSize != null
-                    && cachedSize[0] == w && cachedSize[1] == h) {
-                capsule.set(cachedCapsule);
-            } else {
-                CAPSULE_CACHE.put(act, new Rect(capsule));
-                CAPSULE_SIZE.put(act, new int[]{w, h});
-            }
+            CAPSULE_CACHE.remove(act);
+            CAPSULE_SIZE.remove(act);
         }
 
         TopLayer layer;

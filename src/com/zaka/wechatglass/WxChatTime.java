@@ -238,7 +238,7 @@ final class WxChatTime {
                     if (row == null) continue;
                     ImageView avatar = avatarOf(row);
                     if (avatar == null) continue;
-                    long time = timeOfRow(list, i);
+                    long time = timeOfRow(list, i, row);
                     if (time <= 0L) continue;
 
                     int[] avatarLoc = new int[2];
@@ -311,7 +311,7 @@ final class WxChatTime {
         }
 
         /** 行 → 消息对象 → 时间。 */
-        private long timeOfRow(View list, int childIndex) {
+        private long timeOfRow(View list, int childIndex, View row) {
             int position;
             Object item = null;
             try {
@@ -337,6 +337,10 @@ final class WxChatTime {
                 long[] cached = times.get(position);
                 if (cached != null && now - cached[1] < 1200L) return cached[0];
                 long value = TimeReader.timeOf(item);
+                if (value <= 0L) {
+                    // 新版微信把消息模型藏在行 View 的 tag / 子 View tag 里。
+                    value = TimeReader.timeOfView(row);
+                }
                 times.put(position, new long[]{value, now});
                 return value;
             }
@@ -468,6 +472,31 @@ final class WxChatTime {
                 } catch (Throwable ignored) {
                 }
                 c = c.getSuperclass();
+            }
+            return 0L;
+        }
+
+        /** 从行 View 的 tag（以及子 View 的 tag）里找时间。 */
+        static long timeOfView(View view) {
+            return timeOfView(view, 0);
+        }
+
+        private static long timeOfView(View view, int depth) {
+            if (view == null || depth > 12) return 0L;
+            try {
+                Object tag = view.getTag();
+                if (tag != null) {
+                    long t = timeOf(tag);
+                    if (t > 0L) return t;
+                }
+                if (view instanceof ViewGroup) {
+                    ViewGroup group = (ViewGroup) view;
+                    for (int i = 0; i < group.getChildCount(); i++) {
+                        long t = timeOfView(group.getChildAt(i), depth + 1);
+                        if (t > 0L) return t;
+                    }
+                }
+            } catch (Throwable ignored) {
             }
             return 0L;
         }
