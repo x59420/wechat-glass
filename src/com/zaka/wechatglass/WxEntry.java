@@ -254,6 +254,7 @@ public final class WxEntry implements IXposedHookLoadPackage, IXposedHookZygoteI
                         @Override
                         protected void afterHookedMethod(MethodHookParam param) {
                             try {
+                                if (WxDockController.DISABLED) return;
                                 if (!(param.thisObject instanceof View)) return;
                                 // 先让位：从微信画出底栏到我们的玻璃画出来这段时间，
                                 // 原生的那条先藏起来，别让用户看到两条栏叠在一起。

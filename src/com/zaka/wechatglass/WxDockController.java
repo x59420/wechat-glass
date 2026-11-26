@@ -36,6 +36,9 @@ import java.util.function.IntConsumer;
  */
 final class WxDockController {
 
+    /** 彻底停用 Dock：不再安装、不再藏原生底栏，保证聊天页永远不被盖住。 */
+    static final boolean DISABLED = true;
+
     private static final Handler MAIN = new Handler(Looper.getMainLooper());
 
     /** 轮询间隔：同步图标 / 选中态 / 可见性。 */
@@ -220,6 +223,7 @@ final class WxDockController {
     }
 
     static void onHostResume(final Activity act) {
+        if (DISABLED) return;
         if (!isHost(act)) return;
         if (NON_HOST) return;
         synchronized (KNOWN) {
@@ -359,6 +363,7 @@ final class WxDockController {
     }
 
     private static boolean install(final Activity act) {
+        if (DISABLED) return true;
         WechatGlass.setVerbose(DockPrefs.logEnabled(act));
         if (!DockPrefs.enabled(act)) {
             // 用户在设置里关掉了：把之前压掉的原生底栏恢复。
@@ -905,6 +910,7 @@ final class WxDockController {
 
     /** 设置里重新打开开关：把见过的页面重新接管一遍。 */
     static void requestReinstall() {
+        if (DISABLED) return;
         List<Activity> acts;
         synchronized (KNOWN) {
             acts = new ArrayList<Activity>(KNOWN.keySet());
