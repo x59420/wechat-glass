@@ -524,7 +524,8 @@ final class WxPlusPage {
                         content.setElevation(12f * density);
                     } catch (Throwable ignored) {
                     }
-                    attachPopupBackdrop(content, glass);
+                    // 不做 PixelCopy 背景映射：弹层坐标和窗口裁剪在不同微信版本上经常对不上，
+                    // 映射出来的画面会错位。这里直接用纯色玻璃底。
                     if (content instanceof ViewGroup) {
                         injectPopupRow((ViewGroup) content, dark, density);
                     }

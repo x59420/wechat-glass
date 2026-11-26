@@ -608,9 +608,19 @@ final class WxDockController {
                     // 等原生底栏真正完成布局，必须再量一次，否则 Dock 会一直停在兜底位置。
                     boolean barReady = currentBar != null
                             && currentBar.isAttachedToWindow() && currentBar.getWidth() > 0;
-                    if (band[0] == null || windowChanged || (barReady && !bandFromBar[0])) {
+                    if (barReady) {
+                        // 每次都用原生底栏重新量；只有在矩形真的变了才重设几何。
+                        // 这样冷启动先量错、后续布局完成时能自动纠正，不会把 Dock 钉在错位置。
+                        Rect fresh = measureBand(act, currentBar, iso.view(), tabCount(targets[0]));
+                        if (fresh != null && (band[0] == null || windowChanged || !band[0].equals(fresh))) {
+                            band[0] = fresh;
+                            bandFromBar[0] = true;
+                            synchronized (BANDS) { BANDS.put(act, band[0]); }
+                            applyGeometry(act, iso, backdrop, band[0], tabCount(targets[0]));
+                        }
+                    } else if (band[0] == null || windowChanged) {
                         band[0] = measureBand(act, currentBar, iso.view(), tabCount(targets[0]));
-                        bandFromBar[0] = barReady;
+                        bandFromBar[0] = false;
                         synchronized (BANDS) { BANDS.put(act, band[0]); }
                         if (band[0] != null) applyGeometry(act, iso, backdrop, band[0], tabCount(targets[0]));
                     }
