@@ -169,7 +169,8 @@ final class WxDockController {
         synchronized (OVERLAYS) {
             acts = new java.util.ArrayList<Activity>(OVERLAYS.keySet());
         }
-        for (Activity a : acts) hideNow(a);
+        // 不是隐藏，而是直接卸载玻璃层：聊天/添加朋友页上不可能再被轮询拉回来。
+        for (Activity a : acts) teardown(a, "非首页");
     }
 
     static void onHostResume(final Activity act) {

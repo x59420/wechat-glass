@@ -60,6 +60,9 @@ final class WxTopBar {
 
     static void refresh(final Activity act) {
         if (act == null) return;
+        // 用户要求取消右上角悬浮玻璃：整个顶栏层停用。
+        release(act);
+        if (true) return;
         try {
             if (!WxDockController.isHost(act)) {
                 release(act);
@@ -102,6 +105,7 @@ final class WxTopBar {
      * 「我的界面被加了蒙版」。这里每 600ms 看一眼当前是不是「我」页，是就把层撤掉。
      */
     private static void startWatch(final Activity act) {
+        if (true) return;
         synchronized (WATCHERS) {
             if (WATCHERS.containsKey(act)) return;
         }
@@ -191,14 +195,14 @@ final class WxTopBar {
     }
 
     static void resume(Activity act) {
-        TopLayer layer;
-        synchronized (LAYERS) { layer = LAYERS.get(act); }
-        if (layer != null) layer.setActive(true);
+        release(act);
     }
 
     // ------------------------------------------------------------ 主流程
 
     private static void apply(ViewGroup decor, Activity act) {
+        release(act);
+        if (true) return;
         int w = decor.getWidth();
         int h = decor.getHeight();
         if (w < 200 || h < 400) return;
