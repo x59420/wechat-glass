@@ -299,7 +299,7 @@ public final class WxEntry implements IXposedHookLoadPackage, IXposedHookZygoteI
                     @Override
                     protected void afterHookedMethod(MethodHookParam param) {
                         try {
-                            WxDockController.hideAll();
+                            WxDockController.suppress(true);
                             WxTopBar.releaseAll();
                         } catch (Throwable ignored) {
                         }

@@ -75,6 +75,8 @@ final class WxDockController {
      * 所以在系统生命周期里记一份「谁在最上面」，不是首页就一律收起来。
      */
     private static volatile Activity TOP;
+    /** 最后一个 resume 的页面不是首页：在它退出前，轮询不允许把 Dock 再显示出来。 */
+    private static volatile boolean NON_HOST;
 
     /**
      * 系统自己记的「当前前台是哪个页面」。
@@ -157,6 +159,11 @@ final class WxDockController {
     }
 
     /** 立刻收起所有首页上的 Dock，不等轮询。 */
+    static void suppress(boolean value) {
+        NON_HOST = value;
+        if (value) hideAll();
+    }
+
     static void hideAll() {
         java.util.List<Activity> acts;
         synchronized (OVERLAYS) {
@@ -167,6 +174,7 @@ final class WxDockController {
 
     static void onHostResume(final Activity act) {
         if (!isHost(act)) return;
+        NON_HOST = false;
         synchronized (KNOWN) {
             KNOWN.put(act, Boolean.TRUE);
         }
@@ -203,8 +211,9 @@ final class WxDockController {
     static void onAnyResume(Activity act) {
         if (act == null) return;
         TOP = act;
+        NON_HOST = !isHost(act);
         synchronized (RESUMED_AT) { RESUMED_AT.put(act, SystemClock.uptimeMillis()); }
-        if (!isHost(act)) {
+        if (NON_HOST) {
             // 任何非首页 Activity（聊天、联系人资料、添加朋友、设置…）压上来，
             // 先把首页的 Dock 收掉。不要只认几个写死的类名。
             hideAll();
@@ -535,7 +544,7 @@ final class WxDockController {
                             && !top.isFinishing() && !top.isDestroyed();
                     boolean blocked = top != null
                             && (isBlockedPage(top) || WxChatTime.isChatPage(top));
-                    boolean active = !otherOnTop && !blocked;
+                    boolean active = !otherOnTop && !blocked && !NON_HOST;
                     boolean covered;
                     synchronized (COVERED) {
                         Boolean flag = COVERED.get(act);

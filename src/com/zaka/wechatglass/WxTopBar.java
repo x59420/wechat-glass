@@ -240,6 +240,10 @@ final class WxTopBar {
             release(act);
             return;
         }
+        if (icons.size() == 1) {
+            View plus = findPlusIcon(decor, act, density, icons.get(0));
+            if (plus != null) icons.add(plus);
+        }
         if (icons.size() >= 2) {
             synchronized (ICON_CACHE) { ICON_CACHE.put(act, new ArrayList<View>(icons)); }
         }
@@ -265,8 +269,8 @@ final class WxTopBar {
         int maxH = (int) (46 * density);
         int capsuleH = Math.min(maxH, Math.max(minH, union.height() + (int) (10 * density)));
         int statusBar = statusBarHeight(act);
-        int top = statusBar + (int) (6 * density);
-        int right = w - padH;
+        int top = statusBar + (int) (1 * density);
+        int right = w - (int) (5 * density);
         int capsuleW = (int) (84 * density);
         int left = right - capsuleW;
         Rect capsule = new Rect(left, top, right, top + capsuleH);
@@ -548,6 +552,52 @@ final class WxTopBar {
         return found.size() > 2
                 ? new ArrayList<View>(found.subList(found.size() - 2, found.size()))
                 : found;
+    }
+
+    /** 搜索认到了、＋没认到时，按 contentDescription / 文本 / 类名再找一次。 */
+    private static View findPlusIcon(ViewGroup decor, Activity act, float density, View exclude) {
+        try {
+            ArrayDeque<View> queue = new ArrayDeque<View>();
+            IdentityHashMap<View, Boolean> seen = new IdentityHashMap<View, Boolean>();
+            queue.add(decor);
+            int budget = 20000;
+            int limitY = statusBarHeight(act) + (int) (64 * density);
+            int[] loc = new int[2];
+            View best = null;
+            int bestX = -1;
+            while (!queue.isEmpty() && budget-- > 0) {
+                View v = queue.poll();
+                if (v == null || seen.put(v, Boolean.TRUE) != null || v == exclude) continue;
+                if (v instanceof ViewGroup) {
+                    ViewGroup g = (ViewGroup) v;
+                    for (int i = 0; i < g.getChildCount(); i++) {
+                        View c = g.getChildAt(i);
+                        if (c != null && !(c instanceof TopLayer)) queue.add(c);
+                    }
+                }
+                if (!v.isShown() || v.getAlpha() < 0.3f) continue;
+                if (v.getWidth() < 8 * density || v.getHeight() < 8 * density) continue;
+                v.getLocationInWindow(loc);
+                if (loc[1] > limitY || loc[0] < decor.getWidth() / 2) continue;
+                String desc = v.getContentDescription() == null
+                        ? "" : v.getContentDescription().toString().toLowerCase(java.util.Locale.ROOT);
+                String cls = v.getClass().getName().toLowerCase(java.util.Locale.ROOT);
+                String text = v instanceof android.widget.TextView
+                        ? ((android.widget.TextView) v).getText().toString() : "";
+                boolean plus = desc.contains("更多") || desc.contains("添加")
+                        || desc.contains("plus") || desc.contains("add") || desc.contains("more")
+                        || text.equals("+") || text.equals("＋")
+                        || cls.contains("plus") || cls.contains("add");
+                if (!plus) continue;
+                if (loc[0] > bestX) {
+                    bestX = loc[0];
+                    best = v;
+                }
+            }
+            return best;
+        } catch (Throwable t) {
+            return null;
+        }
     }
 
     /** 像不像一颗标题栏图标：本身是 ImageView，或者能点、或者带着自己的背景。 */
