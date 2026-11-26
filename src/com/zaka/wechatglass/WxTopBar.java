@@ -774,7 +774,25 @@ final class WxTopBar {
                 natives[i] = nativeIcon;
                 ImageView slot = slots[i];
                 if (nativeIcon == null) {
-                    slot.setVisibility(GONE);
+                    if (i == 1) {
+                        // 微信某些版本把「＋」藏得太深，这里补一颗可见的加号，
+                        // 点击仍按右上角坐标转发给原生。
+                        slot.setVisibility(VISIBLE);
+                        slot.setImageBitmap(plusBitmap());
+                        slot.setColorFilter(dark ? 0xFFF3F5F8 : 0xFF15171C,
+                                android.graphics.PorterDuff.Mode.SRC_IN);
+                        FrameLayout.LayoutParams plp =
+                                (FrameLayout.LayoutParams) slot.getLayoutParams();
+                        int size = dp(22);
+                        plp.width = size;
+                        plp.height = size;
+                        plp.gravity = Gravity.TOP | Gravity.START;
+                        plp.leftMargin = getWidth() - dp(34);
+                        plp.topMargin = capsuleInWindow.centerY() - self[1] - size / 2;
+                        slot.setLayoutParams(plp);
+                    } else {
+                        slot.setVisibility(GONE);
+                    }
                     continue;
                 }
                 slot.setVisibility(VISIBLE);
@@ -913,8 +931,26 @@ final class WxTopBar {
         /** 把点击原样转发给微信那颗原生按钮。 */
         private void forward(int index) {
             View target = index >= 0 && index < natives.length ? natives[index] : null;
-            if (target == null) return;
             try {
+                if (target == null && index == 1 && host != null) {
+                    // 没认到原生＋时，按右上角坐标补一次真实触摸。
+                    View decor = host.getWindow() == null ? null
+                            : host.getWindow().getDecorView();
+                    if (decor == null) return;
+                    long now = SystemClock.uptimeMillis();
+                    float x = decor.getWidth() - dp(24);
+                    float y = statusBarHeight(host) + dp(30);
+                    MotionEvent down = MotionEvent.obtain(now, now,
+                            MotionEvent.ACTION_DOWN, x, y, 0);
+                    MotionEvent up = MotionEvent.obtain(now, now + 40L,
+                            MotionEvent.ACTION_UP, x, y, 0);
+                    decor.dispatchTouchEvent(down);
+                    decor.dispatchTouchEvent(up);
+                    down.recycle();
+                    up.recycle();
+                    return;
+                }
+                if (target == null) return;
                 int w = target.getWidth();
                 int h = target.getHeight();
                 if (w <= 0 || h <= 0) return;
@@ -964,6 +1000,20 @@ final class WxTopBar {
         @Override
         public boolean onTouchEvent(MotionEvent event) {
             return false;
+        }
+
+        private Bitmap plusBitmap() {
+            int s = dp(22);
+            Bitmap b = Bitmap.createBitmap(s, s, Bitmap.Config.ARGB_8888);
+            Canvas c = new Canvas(b);
+            Paint p = new Paint(Paint.ANTI_ALIAS_FLAG);
+            p.setColor(0xFFFFFFFF);
+            p.setStrokeWidth(dp(2.2f));
+            p.setStrokeCap(Paint.Cap.ROUND);
+            float pad = dp(5);
+            c.drawLine(pad, s / 2f, s - pad, s / 2f, p);
+            c.drawLine(s / 2f, pad, s / 2f, s - pad, p);
+            return b;
         }
 
         private Bitmap iconBitmap(View v) {

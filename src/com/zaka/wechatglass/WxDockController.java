@@ -174,7 +174,6 @@ final class WxDockController {
 
     static void onHostResume(final Activity act) {
         if (!isHost(act)) return;
-        NON_HOST = false;
         synchronized (KNOWN) {
             KNOWN.put(act, Boolean.TRUE);
         }
@@ -234,6 +233,9 @@ final class WxDockController {
         synchronized (FOCUSED) { FOCUSED.put(act, focused); }
         if (!focused && isHost(act)) hideNow(act);
         if (focused && isHost(act)) {
+            // 只有首页真的拿到焦点，才解除「非首页」抑制；
+            // 聊天页是半透明/叠层时，首页会先 resume 但拿不到焦点。
+            NON_HOST = false;
             synchronized (RESUMED_AT) { RESUMED_AT.put(act, SystemClock.uptimeMillis()); }
         }
     }

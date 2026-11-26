@@ -116,18 +116,19 @@ final class GlassCapsule extends View {
 
     /** 开始 / 停止按 400ms 采一次背景。页面切走就停。 */
     void setActive(boolean value) {
-        if (active == value) return;
+        // 纯色玻璃：不再映射下面的画面，也不再按帧采样。
         active = value;
         main.removeCallbacks(capture);
-        if (value) {
-            lastCapture = 0L;
-            dirty = true;
-            main.post(capture);
+        if (sample != null) {
+            sample.recycle();
+            sample = null;
         }
+        invalidate();
     }
 
     boolean hasFrame() {
-        return sample != null && !sample.isRecycled();
+        // 纯色玻璃不需要等采样帧，直接允许上层隐藏原生图标。
+        return true;
     }
 
     void release() {
@@ -166,6 +167,10 @@ final class GlassCapsule extends View {
     private final Runnable capture = new Runnable() {
         @Override
         public void run() {
+            return;
+        }
+
+        private void unused() {
             if (!active) return;
             long now = android.os.SystemClock.uptimeMillis();
             // 只在「页面滚过 / 布局变了」或者兜底 1.2 秒到点时重画一次。

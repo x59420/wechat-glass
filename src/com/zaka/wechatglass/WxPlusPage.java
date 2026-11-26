@@ -502,7 +502,8 @@ final class WxPlusPage {
                         int pad = (int) (8 * density);
                         // 上面不再额外加留白：用户反馈弹层顶部空太多。
                         // 只补底部一点，文字整体往上收。
-                        group.setPadding(orig[0], orig[1],
+                        int top = Math.max(0, orig[1] - (int) (2 * density));
+                        group.setPadding(orig[0], top,
                                 orig[2], orig[3] + pad);
                         group.setClipToPadding(false);
                     }
