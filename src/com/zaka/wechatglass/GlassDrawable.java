@@ -76,7 +76,7 @@ final class GlassDrawable extends Drawable {
 
         shadePaint.setShader(new LinearGradient(0, bounds.bottom - radiusPx, 0, bounds.bottom,
                 new int[]{0x00000000, dark ? 0x33000000 : 0x1F000000},
-                Shader.TileMode.CLAMP));
+                new float[]{0f, 1f}, Shader.TileMode.CLAMP));
         canvas.drawRect(bounds, shadePaint);
         shadePaint.setShader(null);
 

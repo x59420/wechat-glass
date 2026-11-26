@@ -230,7 +230,7 @@ final class GlassCapsule extends View {
         // 4) 底部内阴影：让胶囊有一点厚度
         shadePaint.setShader(new LinearGradient(0, capsule.bottom - dp(6), 0, capsule.bottom,
                 new int[]{0x00000000, dark ? 0x33000000 : 0x1F000000},
-                Shader.TileMode.CLAMP));
+                new float[]{0f, 1f}, Shader.TileMode.CLAMP));
         canvas.drawRect(capsule, shadePaint);
         shadePaint.setShader(null);
 
