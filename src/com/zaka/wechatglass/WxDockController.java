@@ -380,7 +380,17 @@ final class WxDockController {
         if (!(decor instanceof ViewGroup) || content == null) return false;
         if (content.getWidth() < 50 || content.getHeight() < 50) return false;
         // 已经在聊天 / 添加朋友 / 二级页：不要安装 Dock。
-        if (SUB_PAGE || hasChatInput(decor)
+        // 但回到主 tab 时，标题已经是“微信/通讯录/发现/我”，必须清掉旧状态，
+        // 否则 SUB_PAGE 会永久卡住，首页也再也不出 Dock。
+        if (SUB_PAGE) {
+            if (hasMainTitle(decor) && !hasChatInput(decor)
+                    && !hasNonMainPageTitle(decor)) {
+                SUB_PAGE = false;
+            } else {
+                return true;
+            }
+        }
+        if (hasChatInput(decor)
                 || (hasNonMainPageTitle(decor) && !hasMainTitle(decor))) {
             SUB_PAGE = true;
             return true;
