@@ -65,6 +65,7 @@ public final class WxEntry implements IXposedHookLoadPackage, IXposedHookZygoteI
         WxSettingsEntry.hook(lp.classLoader);
         WxAntiRevoke.hook(lp.classLoader);
         WxChatTime.hook(lp.classLoader);
+        WxChatFragment.hook(lp.classLoader);
         hookNonHostPages(lp.classLoader);
 
         // 装没装上，一眼就能看出来：进微信弹一条，省得再来回猜。

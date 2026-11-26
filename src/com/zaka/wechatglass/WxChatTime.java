@@ -101,6 +101,16 @@ final class WxChatTime {
                 "聊天时间:页面 " + act.getClass().getSimpleName()
                         + " isChat=" + isChatPage(act));
         if (!isChatPage(act)) return;
+        attach(act);
+    }
+
+    /** 聊天 Fragment 自己知道自己打开了，直接强制挂，不再靠 Activity 类名。 */
+    static void attachForChat(Activity act) {
+        if (act == null) return;
+        attach(act);
+    }
+
+    private static void attach(Activity act) {
         Context ctx = WechatGlass.context();
         if (ctx != null && !DockPrefs.chatTime(ctx)) {
             detach(act);

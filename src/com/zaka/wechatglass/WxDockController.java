@@ -37,7 +37,7 @@ import java.util.function.IntConsumer;
 final class WxDockController {
 
     /** 彻底停用 Dock：不再安装、不再藏原生底栏，保证聊天页永远不被盖住。 */
-    static final boolean DISABLED = true;
+    static final boolean DISABLED = false;
 
     private static final Handler MAIN = new Handler(Looper.getMainLooper());
 
