@@ -390,7 +390,7 @@ final class WxDockController {
                 return true;
             }
         }
-        if (hasChatInput(decor)
+        if (hasChatInput(decor) || hasExplicitNonMainTitle(decor)
                 || (hasNonMainPageTitle(decor) && !hasMainTitle(decor))) {
             SUB_PAGE = true;
             return true;
@@ -636,7 +636,8 @@ final class WxDockController {
                     }
                     boolean nonMain = hasNonMainPageTitle(decor);
                     boolean mainTitle = hasMainTitle(decor);
-                    if (chatOpen) {
+                    boolean explicitSub = hasExplicitNonMainTitle(decor);
+                    if (chatOpen || explicitSub) {
                         SUB_PAGE = true;
                     } else if (mainTitle) {
                         // 主 tab 标题优先：列表里“微信运动”这种文字不能被当成二级页标题。
@@ -732,6 +733,47 @@ final class WxDockController {
         }, WATCHDOG_MS);
 
         return true;
+    }
+
+    /** 明确知道是二级页的标题；这些优先于主标题判断。 */
+    private static boolean hasExplicitNonMainTitle(View root) {
+        if (!(root instanceof ViewGroup)) return false;
+        java.util.ArrayDeque<View> queue = new java.util.ArrayDeque<View>();
+        java.util.IdentityHashMap<View, Boolean> seen =
+                new java.util.IdentityHashMap<View, Boolean>();
+        queue.add(root);
+        int budget = 8000;
+        int[] loc = new int[2];
+        int screenH = root.getResources().getDisplayMetrics().heightPixels;
+        while (!queue.isEmpty() && budget-- > 0) {
+            View v = queue.poll();
+            if (v == null || seen.put(v, Boolean.TRUE) != null) continue;
+            if (v instanceof android.widget.TextView && v.isShown()) {
+                v.getLocationInWindow(loc);
+                if (loc[1] < screenH * 0.22f) {
+                    CharSequence cs = ((android.widget.TextView) v).getText();
+                    if (cs != null) {
+                        String t = cs.toString().trim();
+                        if (t.equals("添加朋友") || t.equals("发起群聊")
+                                || t.equals("选择联系人") || t.equals("新的朋友")
+                                || t.equals("群聊") || t.equals("微信支付")
+                                || t.equals("微信团队") || t.equals("微信运动")) {
+                            return true;
+                        }
+                    }
+                }
+            }
+            if (v instanceof ViewGroup) {
+                ViewGroup g = (ViewGroup) v;
+                for (int i = 0; i < g.getChildCount(); i++) {
+                    View c = g.getChildAt(i);
+                    if (c != null && !c.getClass().getName().startsWith(WechatGlass.PKG)) {
+                        queue.add(c);
+                    }
+                }
+            }
+        }
+        return false;
     }
 
     /** 顶部是否还是「微信 / 通讯录 / 发现 / 我」主 tab 标题。 */
