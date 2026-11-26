@@ -132,6 +132,110 @@ public final class Backdrop {
         return downscaleFactor;
     }
 
+    // ------------------------------------------------------------------ 窗口直采
+    //
+    // 微信这边不需要"画内容树"：那套是为抖音视频页写的，代价是把整棵视图树按 10fps
+    // 软件重画一遍，滚动时不跟手、看起来就是一张静态图。
+    // 这里直接对窗口做 PixelCopy，只抓 Dock 那一条 —— 拿到的就是屏幕合成之后
+    // 的真画面（含图片、视频、滚动的列表），一帧的代价只有一条窄图的拷贝。
+
+    /** 30fps：再高对玻璃后面的模糊没有意义，还白烧电。 */
+    private static final long LIVE_INTERVAL_MS = 33L;
+    /** 连续失败多少次就退回"画内容树"的老路子。 */
+    private static final int LIVE_FAIL_LIMIT = 30;
+
+    private android.view.Window window;
+    private boolean liveActive;
+    private int liveFails;
+    private final Rect liveSrc = new Rect();
+
+    private final Runnable liveTick = new Runnable() {
+        @Override
+        public void run() {
+            if (!liveActive || window == null) return;
+            captureLive();
+            main.postDelayed(this, LIVE_INTERVAL_MS);
+        }
+    };
+
+    /** 换用窗口直采。传 null 就退回画内容树。 */
+    void setWindow(android.view.Window w) {
+        if (window == w) return;
+        window = w;
+        liveFails = 0;
+        if (window == null) {
+            main.removeCallbacks(liveTick);
+            liveActive = false;
+        }
+        force = true;
+    }
+
+    /** Dock 显示 / 收起：收起时停掉采样，省电也省帧。 */
+    void setActive(boolean active) {
+        if (liveActive == active) return;
+        liveActive = active;
+        main.removeCallbacks(liveTick);
+        if (active && window != null) main.post(liveTick);
+    }
+
+    private void captureLive() {
+        if (window == null || region.isEmpty() || inflight > 0) return;
+        int sw = region.width();
+        int sh = region.height();
+        if (sw < 8 || sh < 8) return;
+        try {
+            if (ui == null || ui.isRecycled()
+                    || ui.getWidth() != sw || ui.getHeight() != sh) {
+                releaseBitmaps();
+                ui = Bitmap.createBitmap(sw, sh, Bitmap.Config.ARGB_8888);
+                vid = Bitmap.createBitmap(sw, sh, Bitmap.Config.ARGB_8888);
+                out = Bitmap.createBitmap(sw, sh, Bitmap.Config.ARGB_8888);
+                uiValid = false;
+            }
+        } catch (Throwable t) {
+            WechatGlass.warnOnce("live-bitmap", "直采位图建不起来: " + t);
+            window = null;
+            return;
+        }
+        final Bitmap dest = ui;
+        final Rect src = new Rect(region);
+        liveSrc.set(src);
+        inflight++;
+        try {
+            android.view.PixelCopy.request(window, src, dest,
+                    new android.view.PixelCopy.OnPixelCopyFinishedListener() {
+                        @Override
+                        public void onPixelCopyFinished(int result) {
+                            inflight--;
+                            if (!liveActive) return;
+                            if (result == android.view.PixelCopy.SUCCESS) {
+                                liveFails = 0;
+                                uiValid = true;
+                                try {
+                                    compose();
+                                    notifyFrame();
+                                    note = "live ok";
+                                } catch (Throwable t) {
+                                    WechatGlass.warnOnce("live-compose", "直采合成失败: " + t);
+                                }
+                            } else if (++liveFails > LIVE_FAIL_LIMIT) {
+                                WechatGlass.warn("窗口直采连续失败（" + result
+                                        + "），退回画内容树");
+                                window = null;
+                                main.removeCallbacks(liveTick);
+                                force = true;
+                            }
+                        }
+                    }, main);
+        } catch (Throwable t) {
+            inflight--;
+            if (++liveFails > LIVE_FAIL_LIMIT) {
+                window = null;
+                WechatGlass.warnOnce("live-fail", "窗口直采起不来，退回画内容树: " + t);
+            }
+        }
+    }
+
     void setContent(View v) {
         if (v == content) return;
         detachPreDraw();
@@ -293,6 +397,7 @@ public final class Backdrop {
      * 静态页面（比如个人页）不会每秒画十遍树。
      */
     void pump() {
+        if (window != null) return; // 窗口直采模式：帧由 liveTick 自驱
         if (content == null || region.isEmpty()) return;
         attachPreDraw();
         int drawn = drawCount.get();
@@ -881,6 +986,8 @@ public final class Backdrop {
     }
 
     void release() {
+        liveActive = false;
+        window = null;
         main.removeCallbacksAndMessages(null);
         detachPreDraw();
         releaseLayers();

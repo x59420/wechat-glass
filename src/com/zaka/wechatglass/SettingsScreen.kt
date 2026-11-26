@@ -10,8 +10,14 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.systemBars
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -57,6 +63,7 @@ import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.sp
+import kotlin.math.roundToInt
 import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupProperties
 import top.yukonga.miuix.kmp.blur.Backdrop
@@ -300,6 +307,7 @@ internal fun SettingsScreen(
     val palette = if (dark) DarkSettingsPalette else LightSettingsPalette
     CompositionLocalProvider(LocalSettingsPalette provides palette, LocalSettingsOverlay provides overlay) {
         val scene = rememberLayerBackdrop()
+        var tab by remember { mutableIntStateOf(0) }
         Box((if (overlay) Modifier.fillMaxWidth() else Modifier.fillMaxSize())
             .background(if (overlay) Color.Transparent else palette.background)) {
             if (!overlay) {
@@ -313,104 +321,240 @@ internal fun SettingsScreen(
                     .clip(RoundedCornerShape(28.dp)).background(palette.panel)
                     .border(1.dp, palette.border, RoundedCornerShape(28.dp))
             } else Modifier.fillMaxSize()
-            Column(panel.verticalScroll(rememberScrollState())
-                .padding(horizontal = 18.dp)
-                .padding(top = 8.dp, bottom = if (overlay) 24.dp else 36.dp)) {
-            TopBar(version = version, onBack = onBack)
-            Spacer(Modifier.height(16.dp))
+            Column(
+                panel
+                    .verticalScroll(rememberScrollState())
+                    .then(
+                        if (overlay) Modifier
+                        else Modifier.windowInsetsPadding(WindowInsets.systemBars)
+                    )
+                    .padding(horizontal = 18.dp)
+                    .padding(top = 8.dp, bottom = if (overlay) 24.dp else 36.dp)
+            ) {
+                TopBar(version = version, onBack = onBack)
+                Spacer(Modifier.height(14.dp))
 
-            SectionTitle("外观")
-            GlassCard(scene) {
-                ThemeModeRow(
-                    backdrop = scene,
-                    themeMode = state.themeMode.value,
-                    onChange = state::setThemeMode,
+                SettingsTabBar(
+                    tabs = listOf("开关", "尺寸", "外观"),
+                    selected = tab,
+                    onSelect = { tab = it },
                 )
-                Divider()
-                SliderRow("玻璃透明度", state.glassAlpha.value,
-                    0, 100, 5, state::setGlassAlpha, unit = "%",
-                    hint = "100% 就是现在这样，往左更透")
-                Divider()
-                SwitchRow(
-                    title = "隐藏玻璃背景",
-                    subtitle = "只留底部图标，不画那块玻璃",
-                    checked = state.hideBackground.value,
-                    onChange = state::setHideBackground,
-                )
-                Divider()
-                SwitchRow(
-                    title = "启用玻璃 Dock",
-                    subtitle = "关掉就完全用微信原生底栏",
-                    checked = state.enabled.value,
-                    onChange = state::setEnabled,
-                )
-                Divider()
-                SwitchRow(
-                    title = "显示文字标签",
-                    subtitle = "关掉只留图标，图标会自动居中",
-                    checked = state.showLabels.value,
-                    onChange = state::setShowLabels,
-                )
-            }
+                Spacer(Modifier.height(16.dp))
 
-            Spacer(Modifier.height(18.dp))
-            SectionTitle("尺寸")
-            GlassCard(scene) {
-                SliderRow("Dock 高度", state.height.value,
-                    52, 88, 2, state::setHeight)
-                Divider()
-                SliderRow("单个图标宽度", state.tabWidth.value,
-                    60, 100, 2, state::setTabWidth)
-                Divider()
-                SliderRow("左右留白", state.sideMargin.value,
-                    12, 40, 2, state::setSideMargin)
-                Divider()
-                SliderRow("离底部距离", state.bottomGap.value,
-                    0, 28, 1, state::setBottomGap)
-            }
+                when (tab) {
+                    0 -> {
+                        SectionTitle("功能开关")
+                        GlassCard(scene) {
+                            SwitchRow(
+                                title = "启用玻璃 Dock",
+                                subtitle = "关掉就完全用微信原生底栏",
+                                checked = state.enabled.value,
+                                onChange = state::setEnabled,
+                            )
+                            Divider()
+                            SwitchRow(
+                                title = "显示文字标签",
+                                subtitle = "关掉只留图标，图标会自动居中",
+                                checked = state.showLabels.value,
+                                onChange = state::setShowLabels,
+                            )
+                            Divider()
+                            SwitchRow(
+                                title = "底栏区域透明",
+                                subtitle = "清掉原生底栏那一条的底色，画面一直延伸到底",
+                                checked = state.bottomTransparent.value,
+                                onChange = state::setBottomTransparent,
+                            )
+                            Divider()
+                            SwitchRow(
+                                title = "弹层背景透明",
+                                subtitle = "「＋」面板、长按菜单那层底也透明",
+                                checked = state.menuTransparent.value,
+                                onChange = state::setMenuTransparent,
+                            )
+                            Divider()
+                            SwitchRow(
+                                title = "抓不到画面用主色垫底",
+                                subtitle = "纯色页面不至于是一块黑玻璃",
+                                checked = state.videoTint.value,
+                                onChange = state::setVideoTint,
+                            )
+                            Divider()
+                            SwitchRow(
+                                title = "记录日志",
+                                subtitle = "开启后到 LSPosed 里搜 tag「wxglass」看过程",
+                                checked = state.logEnabled.value,
+                                onChange = state::setLogEnabled,
+                            )
+                        }
+                    }
 
-            Spacer(Modifier.height(18.dp))
-            SectionTitle("调试")
-            GlassCard(scene) {
-                SwitchRow(
-                    title = "记录日志",
-                    subtitle = "开启后到 LSPosed 里搜 tag「wxglass」看过程",
-                    checked = state.logEnabled.value,
-                    onChange = state::setLogEnabled,
+                    1 -> {
+                        SectionTitle("尺寸")
+                        GlassCard(scene) {
+                            SliderRow("Dock 高度", state.height.value,
+                                52, 88, 2, state::setHeight, unit = "dp")
+                            Divider()
+                            SliderRow("单个图标宽度", state.tabWidth.value,
+                                60, 100, 2, state::setTabWidth, unit = "dp")
+                            Divider()
+                            SliderRow("左右留白", state.sideMargin.value,
+                                12, 40, 2, state::setSideMargin, unit = "dp")
+                            Divider()
+                            SliderRow("离底部距离", state.bottomGap.value,
+                                0, 28, 1, state::setBottomGap, unit = "dp")
+                        }
+                    }
+
+                    else -> {
+                        SectionTitle("外观")
+                        GlassCard(scene) {
+                            ThemeModeRow(
+                                backdrop = scene,
+                                themeMode = state.themeMode.value,
+                                onChange = state::setThemeMode,
+                            )
+                            Divider()
+                            SliderRow("玻璃透明度", state.glassAlpha.value,
+                                0, 100, 5, state::setGlassAlpha, unit = "%",
+                                hint = "100% 就是现在这样，往左更透")
+                            Divider()
+                            SwitchRow(
+                                title = "隐藏玻璃背景",
+                                subtitle = "只留底部图标，不画那块玻璃",
+                                checked = state.hideBackground.value,
+                                onChange = state::setHideBackground,
+                            )
+                        }
+                        Spacer(Modifier.height(16.dp))
+                        GlassCard(scene) {
+                            TextRow(
+                                title = "恢复默认尺寸",
+                                subtitle = "只重置尺寸和开关，不动别的",
+                                onClick = state::reset,
+                            )
+                        }
+                    }
+                }
+
+                Spacer(Modifier.height(22.dp))
+                Label(
+                    text = "wxglass $version",
+                    color = LocalSettingsPalette.current.secondary,
+                    size = 12.sp,
+                    modifier = Modifier.fillMaxWidth(),
+                    align = TextAlign.Center,
                 )
-            }
-
-            Spacer(Modifier.height(18.dp))
-            GlassCard(scene) {
-                TextRow(
-                    title = "恢复默认尺寸",
-                    subtitle = "只重置尺寸和开关，不动别的",
-                    onClick = state::reset,
+                Spacer(Modifier.height(10.dp))
+                Label(
+                    text = "液态玻璃渲染移植自 KernelSU（Compose + Miuix），折射与色散参数与上游一致；"
+                        + "模糊采样由 compose-miuix-ui 提供。本模块与微信官方无关，仅限个人非商业用途。",
+                    color = LocalSettingsPalette.current.secondary.copy(alpha = 0.75f),
+                    size = 11.sp,
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp),
+                    align = TextAlign.Center,
+                    lineHeight = 16.sp,
                 )
-            }
-
-            Spacer(Modifier.height(22.dp))
-            Label(
-                text = "wxglass $version",
-                color = LocalSettingsPalette.current.secondary,
-                size = 12.sp,
-                modifier = Modifier.fillMaxWidth(),
-                align = TextAlign.Center,
-            )
-            Spacer(Modifier.height(10.dp))
-            Label(
-                text = "液态玻璃渲染移植自 KernelSU（Compose + Miuix），折射与色散参数与上游一致；"
-                    + "模糊采样由 compose-miuix-ui 提供。本模块与微信官方无关，仅限个人非商业用途。",
-                color = LocalSettingsPalette.current.secondary.copy(alpha = 0.75f),
-                size = 11.sp,
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp),
-                align = TextAlign.Center,
-                lineHeight = 16.sp,
-            )
             }
         }
     }
 }
+
+/**
+ * 顶部分类。
+ *
+ * 手感按需求来，没有 Dock 那套「按下去放大透镜」：
+ *   - 点一下：滑块用弹簧滑到对应那一格（弹性，不是死板的一步到位）；
+ *   - 长按之后可以直接横向拖着换分类，松手吸附到最近的一格。
+ */
+@Composable
+private fun SettingsTabBar(tabs: List<String>, selected: Int, onSelect: (Int) -> Unit) {
+    val palette = LocalSettingsPalette.current
+    val shape = RoundedCornerShape(18.dp)
+    val density = LocalDensity.current
+    // 长按拖动时用连续值，松手再交给动画吸附。
+    var dragging by remember { mutableStateOf(false) }
+    var dragPos by remember { mutableFloatStateOf(selected.toFloat()) }
+    val target = if (dragging) dragPos else selected.toFloat()
+    val pos by animateFloatAsState(
+        targetValue = target,
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioLowBouncy,
+            stiffness = Spring.StiffnessMediumLow,
+        ),
+        label = "tabPos",
+    )
+
+    BoxWithConstraints(
+        Modifier
+            .fillMaxWidth()
+            .height(46.dp)
+            .clip(shape)
+            .background(palette.card.copy(alpha = 0.62f))
+            .border(1.dp, palette.border, shape)
+            .pointerInput(tabs.size) {
+                detectDragGesturesAfterLongPress(
+                    onDragStart = { offset ->
+                        dragging = true
+                        dragPos = indexAt(offset.x, size.width.toFloat(), tabs.size)
+                    },
+                    onDrag = { change, _ ->
+                        change.consume()
+                        dragPos = indexAt(change.position.x, size.width.toFloat(), tabs.size)
+                    },
+                    onDragEnd = {
+                        val picked = dragPos.roundToInt().coerceIn(0, tabs.size - 1)
+                        dragging = false
+                        onSelect(picked)
+                    },
+                    onDragCancel = { dragging = false },
+                )
+            }
+    ) {
+        val segWidth = maxWidth / tabs.size
+        Box(
+            Modifier
+                .offset {
+                    val unit = with(density) { segWidth.roundToPx() }
+                    IntOffset((unit * pos).roundToInt(), 0)
+                }
+                .width(segWidth)
+                .fillMaxHeight()
+                .padding(4.dp)
+                .clip(RoundedCornerShape(15.dp))
+                .background(palette.accent.copy(alpha = 0.92f))
+        )
+        Row(Modifier.fillMaxSize()) {
+            tabs.forEachIndexed { index, title ->
+                val active = pos.roundToInt() == index
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxHeight()
+                        .clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null,
+                        ) { onSelect(index) },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Label(
+                        text = title,
+                        color = if (active) palette.selectedText else palette.primary,
+                        size = 13.5.sp,
+                        weight = if (active) FontWeight.SemiBold else FontWeight.Normal,
+                    )
+                }
+            }
+        }
+    }
+}
+
+private fun indexAt(x: Float, width: Float, count: Int): Float {
+    if (width <= 0f || count <= 1) return 0f
+    val seg = width / count
+    return (x / seg).coerceIn(0f, (count - 1).toFloat())
+}
+
 @Composable
 private fun TopBar(version: String, onBack: () -> Unit) {
     val palette = LocalSettingsPalette.current

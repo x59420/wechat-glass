@@ -58,7 +58,7 @@ public final class WxEntry implements IXposedHookLoadPackage, IXposedHookZygoteI
         hookApplication();
         registerToCurrentApplication();
         hookTabBarCreated(lp.classLoader);
-        WxRowEntry.hook(lp.classLoader);
+        WxPlusPage.hook(lp.classLoader);
 
         // 装没装上，一眼就能看出来：进微信弹一条，省得再来回猜。
         WechatGlass.toast(WechatGlass.VER + " 已加载");
@@ -73,7 +73,18 @@ public final class WxEntry implements IXposedHookLoadPackage, IXposedHookZygoteI
                     try {
                         Object self = param.thisObject;
                         if (!(self instanceof Activity)) return;
-                        WxDockController.onHostResume((Activity) self);
+                        final Activity act = (Activity) self;
+                        WxDockController.onAnyResume(act);
+                        View decor = act.getWindow() == null
+                                ? null : act.getWindow().getDecorView();
+                        if (decor != null) {
+                            decor.postDelayed(new Runnable() {
+                                @Override
+                                public void run() {
+                                    WxTopBar.refresh(act);
+                                }
+                            }, 600L);
+                        }
                     } catch (Throwable t) {
                         WechatGlass.warnOnce("resume", "onResume 处理失败: " + t);
                     }
@@ -215,7 +226,19 @@ public final class WxEntry implements IXposedHookLoadPackage, IXposedHookZygoteI
                 @Override
                 public void onActivityResumed(Activity activity) {
                     try {
-                        WxDockController.onHostResume(activity);
+                        WxDockController.onAnyResume(activity);
+                        final Activity page = activity;
+                        View decor = activity.getWindow() == null
+                                ? null : activity.getWindow().getDecorView();
+                        if (decor != null) {
+                            decor.postDelayed(new Runnable() {
+                                @Override
+                                public void run() {
+                                    WxPlusPage.tryAttach(page);
+                                    WxTopBar.refresh(page);
+                                }
+                            }, 500L);
+                        }
                     } catch (Throwable t) {
                         WechatGlass.warnOnce("lifecycle-resume", "onActivityResumed 处理失败: " + t);
                     }
@@ -223,6 +246,12 @@ public final class WxEntry implements IXposedHookLoadPackage, IXposedHookZygoteI
 
                 @Override
                 public void onActivityPaused(Activity activity) {
+                    try {
+                        WxDockController.onAnyPause(activity);
+                        WxPlusPage.detach(activity);
+                    } catch (Throwable t) {
+                        WechatGlass.warnOnce("lifecycle-pause", "onActivityPaused 处理失败: " + t);
+                    }
                 }
 
                 @Override

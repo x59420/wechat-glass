@@ -65,6 +65,16 @@ final class WxDockController {
     private static final WeakHashMap<Activity, Boolean> LIVE =
             new WeakHashMap<Activity, Boolean>();
 
+    /**
+     * 当前真正在前台的那个页面。
+     *
+     * 只靠「原生底栏还在不在」判断显隐是不够的：微信把底栏留在自己的窗口里，
+     * 聊天页、添加朋友页压上来之后，挂在首页 decor 上的玻璃层在部分机型/转场方式下
+     * 依然会被画出来（用户看到的就是「进了聊天页 Dock 还在」）。
+     * 所以在系统生命周期里记一份「谁在最上面」，不是首页就一律收起来。
+     */
+    private static volatile Activity TOP;
+
     private WxDockController() {
     }
 
@@ -108,6 +118,38 @@ final class WxDockController {
     static void onHostPause(Activity act) {
         // 微信切到别的 Activity（聊天页等）时，Dock 挂在 LauncherUI 的 decor 上，
         // 本来就跟着一起不可见，这里不需要额外动作。
+        if (act != null && TOP == act) TOP = null;
+        hideNow(act);
+    }
+
+    /**
+     * 任何页面回到前台都走这里。
+     *
+     * 是首页 → 正常接管；不是首页（聊天页、添加朋友页、扫一扫…）→ 记下"最上面是谁"，
+     * Dock 的轮询会因为 TOP 对不上而立刻收起来。
+     */
+    static void onAnyResume(Activity act) {
+        if (act == null) return;
+        TOP = act;
+        if (isHost(act)) onHostResume(act);
+    }
+
+    static void onAnyPause(Activity act) {
+        if (act == null) return;
+        if (TOP == act) TOP = null;
+        if (isHost(act)) hideNow(act);
+    }
+
+    /** 立刻收起 Dock（不拆玻璃层，回来还能接着用）。 */
+    private static void hideNow(Activity act) {
+        if (act == null) return;
+        DockLayer iso;
+        synchronized (OVERLAYS) { iso = OVERLAYS.get(act); }
+        if (iso == null) return;
+        try {
+            animate(iso.view(), false);
+        } catch (Throwable ignored) {
+        }
     }
 
     // ------------------------------------------------------------ 安装
@@ -167,6 +209,8 @@ final class WxDockController {
         final Backdrop backdrop = new Backdrop();
         backdrop.setContent(content);
         backdrop.setSampleScale();
+        // 直接抓窗口合成后的画面：滚动、翻页、视频都能跟上，不再是一张静态图。
+        backdrop.setWindow(act.getWindow());
 
         final List<View>[] targets = new List[]{new ArrayList<View>(items)};
         final ViewGroup[] barRef = new ViewGroup[]{bar};
@@ -342,7 +386,10 @@ final class WxDockController {
                     refreshTabs(act, iso, targets[0]);
 
                     // 原生底栏还在、还有实体，就显示；不然收起来。
-                    boolean wantShow = currentBar != null
+                    // 前台必须是首页：聊天页 / 添加朋友页 / 扫一扫压上来时一律收起。
+                    boolean active = TOP == null || TOP == act;
+                    boolean wantShow = active
+                            && currentBar != null
                             && currentBar.isAttachedToWindow()
                             && currentBar.getVisibility() == View.VISIBLE
                             && SelfMask.effectiveAlpha(currentBar) > 0.01f
@@ -356,6 +403,7 @@ final class WxDockController {
                         shown[0] = false;
                         animate(iso.view(), false);
                     }
+                    backdrop.setActive(wantShow);
 
                     if (band[0] != null) {
                         backdrop.setRegion(inWindow(iso.view(), band[0]));
