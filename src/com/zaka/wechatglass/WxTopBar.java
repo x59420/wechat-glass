@@ -196,9 +196,10 @@ final class WxTopBar {
 
         List<View> icons = findIcons(decor, act, w, h, density);
 
-        // 再兜一道：右上角没图标、标题也不是「微信 / 通讯录 / 发现」中的一个，
-        // 就当这一页不是前三个 tab（最典型的就是「我」页）——整层撤掉，什么都不画。
-        if (icons.isEmpty() && !hasKnownTitle(decor, act, density)) {
+        // 硬保证：「我」那一页保持 100% 原生。
+        // 判据就是「右上角有没有搜索和＋」——「我」页本来就没有这两颗，
+        // 认不到就整层不画（渐变也不画），所以它不可能被我们改到。
+        if (icons.isEmpty()) {
             release(act);
             return;
         }
@@ -212,6 +213,10 @@ final class WxTopBar {
             union.right = Math.max(union.right, loc[0] + v.getWidth());
             union.bottom = Math.max(union.bottom, loc[1] + v.getHeight());
         }
+        if (union.width() <= 0 || union.height() <= 0) {
+            release(act);
+            return;
+        }
 
         // 胶囊几何按「原位」来：高度跟着那颗图标走（图标高 + 上下各留 9dp），
         // 不跟 Dock 对齐 —— 标题栏就那么高，硬塞一个 64dp 的大胶囊反而不协调。
@@ -221,42 +226,21 @@ final class WxTopBar {
         int padV = (int) (9 * density);
         int minH = (int) (34 * density);
         int maxH = (int) (48 * density);
-        Rect capsule = new Rect();
-        if (union.width() > 0 && union.height() > 0) {
-            int capsuleH = Math.max(minH, Math.min(maxH, union.height() + padV * 2));
-            int cy = (union.top + union.bottom) / 2;
-            int top = cy - capsuleH / 2;
-            int statusBar = statusBarHeight(act);
-            if (top < statusBar) top = statusBar;
-            int limit = bandBottomOf(decor, act, density);
-            int bottom = top + capsuleH;
-            if (bottom > limit) {
-                bottom = limit;
-                top = Math.max(statusBar, bottom - capsuleH);
-            }
-            capsule.set(union.left - padH, top, union.right + padH, bottom);
+        int capsuleH = Math.max(minH, Math.min(maxH, union.height() + padV * 2));
+        int cy = (union.top + union.bottom) / 2;
+        int top = cy - capsuleH / 2;
+        int statusBar = statusBarHeight(act);
+        if (top < statusBar) top = statusBar;
+        int limit = bandBottomOf(decor, act, density);
+        int bottom = top + capsuleH;
+        if (bottom > limit) {
+            bottom = limit;
+            top = Math.max(statusBar, bottom - capsuleH);
         }
+        Rect capsule = new Rect(union.left - padH, top, union.right + padH, bottom);
 
         TopLayer layer;
         synchronized (LAYERS) { layer = LAYERS.get(act); }
-
-        if (icons.isEmpty()) {
-            // 认不到搜索 / ＋：**渐变照画**，只是不画那颗胶囊。
-            // 上一版这里直接 return，结果连顶栏渐变都一起没了 —— 用户看到的就是「啥都没变」。
-            WechatGlass.warnOnce("topbar-icons-" + act.hashCode(),
-                    "顶栏:右上角没认到搜索/＋，只画渐变不画胶囊");
-            if (layer != null && layer.hasNatives()) {
-                layer.refreshScrim(dark);
-                return;
-            }
-            if (layer == null || layer.getParent() == null) {
-                layer = addLayer(decor, act);
-                if (layer == null) return;
-            }
-            layer.setBandBottom(bandBottomOf(decor, act, density));
-            layer.bind(act, dark, new Rect(), icons, capsule);
-            return;
-        }
 
         if (layer == null || layer.getParent() == null) {
             layer = addLayer(decor, act);
