@@ -789,6 +789,15 @@ final class WxDockController {
         return true;
     }
 
+    /** 去掉标题末尾的未读角标，例如 微信(2) / 微信(99) / 微信 3。 */
+    private static String cleanTitle(String text) {
+        if (text == null) return "";
+        String s = text.trim();
+        s = s.replaceAll("\\s*\\(\\d+\\)\\s*$", "");
+        s = s.replaceAll("\\s+\\d+$", "");
+        return s.trim();
+    }
+
     /** 明确知道是二级页的标题；这些优先于主标题判断。 */
     private static boolean hasExplicitNonMainTitle(View root) {
         if (!(root instanceof ViewGroup)) return false;
@@ -849,11 +858,12 @@ final class WxDockController {
                     CharSequence cs = ((android.widget.TextView) v).getText();
                     if (cs != null) {
                         String t = cs.toString().trim();
-                        if (t.equals("微信") || t.startsWith("微信(")
-                                || t.equals("通讯录") || t.equals("发现")
-                                || t.equals("我") || t.equals("WeChat")
-                                || t.equals("Chats") || t.equals("Contacts")
-                                || t.equals("Discover") || t.equals("Me")) {
+                        String base = cleanTitle(t);
+                        if (base.equals("微信") || base.equals("通讯录")
+                                || base.equals("发现") || base.equals("我")
+                                || base.equals("WeChat") || base.equals("Chats")
+                                || base.equals("Contacts") || base.equals("Discover")
+                                || base.equals("Me")) {
                             return true;
                         }
                     }
@@ -892,10 +902,12 @@ final class WxDockController {
                         CharSequence cs = ((android.widget.TextView) v).getText();
                         if (cs != null) {
                             String t = cs.toString().trim();
-                            if (t.equals("微信") || t.equals("通讯录") || t.equals("发现")
-                                    || t.equals("我") || t.equals("WeChat")
-                                    || t.equals("Chats") || t.equals("Contacts")
-                                    || t.equals("Discover") || t.equals("Me")) {
+                            String base = cleanTitle(t);
+                            if (base.equals("微信") || base.equals("通讯录")
+                                    || base.equals("发现") || base.equals("我")
+                                    || base.equals("WeChat") || base.equals("Chats")
+                                    || base.equals("Contacts") || base.equals("Discover")
+                                    || base.equals("Me")) {
                                 continue;
                             }
                             if (t.equals("添加朋友") || t.equals("发起群聊")
