@@ -1003,7 +1003,23 @@ final class WxDockController {
             int top = bandTop + bandRect.height()
                     - (int) (DockPrefs.bottomGapDp(act) * density) - pill;
 
-            // 不许压进系统手势条：全屏页面上量到的 band 会贴到屏幕最底。
+            // 不许压进系统手势条：用 WindowVisibleDisplayFrame 做硬边界。
+            // 刚冷启动时 RootWindowInsets 可能还是 0，只看 inset 会时对时错，
+            // visible frame 则一开始就是稳定的。
+            try {
+                Rect visible = new Rect();
+                View decor = act.getWindow() == null ? null : act.getWindow().getDecorView();
+                if (decor != null) {
+                    decor.getWindowVisibleDisplayFrame(visible);
+                    int visibleBottom = visible.bottom - overlayLoc[1];
+                    if (visibleBottom > 0) {
+                        int limit = visibleBottom - (int) (2f * density) - pill;
+                        if (top > limit) top = limit;
+                    }
+                }
+            } catch (Throwable ignored) {
+            }
+
             int overlayHeight = iso.view().getHeight();
             int navBottom = navigationBarInsetBottom(act);
             if (overlayHeight > 0 && navBottom > 0) {
