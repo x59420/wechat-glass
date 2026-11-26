@@ -559,7 +559,8 @@ final class WxDockController {
                             && currentBar.isAttachedToWindow()
                             && currentBar.getVisibility() == View.VISIBLE
                             && SelfMask.effectiveAlpha(currentBar) > 0.01f
-                            && currentBar.getWidth() > 0;
+                            && currentBar.getWidth() > 0
+                            && !barCovered(decor, currentBar);
 
                     // 显隐跟实际画面对齐，而不是跟一个一次性的布尔位：
                     // 从聊天页回来时玻璃层可能已经被上一步设成 GONE，只看布尔位就不会再显示。
@@ -619,6 +620,58 @@ final class WxDockController {
         }, WATCHDOG_MS);
 
         return true;
+    }
+
+    /**
+     * 底栏中心点现在最上面是不是底栏自己。
+     *
+     * 微信有些二级页（联系人主页、添加朋友等）并不换 Activity，而是在首页上面
+     * 盖一层全屏 View；这时 Activity 还是 LauncherUI，只看生命周期判断不出来。
+     * 直接做一次命中测试：如果底栏中心最上层不是底栏，就认为被盖住，Dock 收起。
+     */
+    private static boolean barCovered(View decor, View bar) {
+        try {
+            if (decor == null || bar == null || bar.getWidth() <= 0 || bar.getHeight() <= 0) {
+                return false;
+            }
+            int[] loc = new int[2];
+            bar.getLocationInWindow(loc);
+            float x = loc[0] + bar.getWidth() / 2f;
+            float y = loc[1] + bar.getHeight() / 2f;
+            View top = topMostAt(decor, x, y);
+            if (top == null) return false;
+            return top != bar && !isDescendant(top, bar);
+        } catch (Throwable t) {
+            return false;
+        }
+    }
+
+    private static View topMostAt(View root, float x, float y) {
+        if (!(root instanceof ViewGroup)) return root;
+        ViewGroup group = (ViewGroup) root;
+        for (int i = group.getChildCount() - 1; i >= 0; i--) {
+            View child = group.getChildAt(i);
+            if (child == null || child.getVisibility() != View.VISIBLE
+                    || child.getAlpha() < 0.05f) continue;
+            // 我们自己的 Dock / 顶栏 / 聊天时间层不算“盖住底栏”。
+            if (child.getClass().getName().startsWith(WechatGlass.PKG)) continue;
+            int[] loc = new int[2];
+            child.getLocationInWindow(loc);
+            if (x < loc[0] || x >= loc[0] + child.getWidth()
+                    || y < loc[1] || y >= loc[1] + child.getHeight()) continue;
+            View deeper = topMostAt(child, x, y);
+            return deeper != null ? deeper : child;
+        }
+        return null;
+    }
+
+    private static boolean isDescendant(View child, View ancestor) {
+        ViewParent p = child == null ? null : child.getParent();
+        while (p instanceof View) {
+            if (p == ancestor) return true;
+            p = p.getParent();
+        }
+        return false;
     }
 
     // ------------------------------------------------------------ 几何

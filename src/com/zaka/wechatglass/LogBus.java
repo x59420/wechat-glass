@@ -43,6 +43,16 @@ public final class LogBus {
     private LogBus() {
     }
 
+    /** 设置里的「记录日志」开关：关掉后连待发送的缓冲一起清掉。 */
+    static void setEnabled(boolean enabled) {
+        disabled = !enabled;
+        if (!enabled) {
+            synchronized (PENDING) { PENDING.clear(); }
+            MAIN.removeCallbacks(FLUSH);
+            scheduled = false;
+        }
+    }
+
     /** 日志统一入口：普通流程、警告、错误都从这里进。 */
     static void write(String line) {
         if (disabled || line == null) return;

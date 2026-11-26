@@ -47,6 +47,8 @@ final class WxTopBar {
     private static final WeakHashMap<View, Float> HIDDEN = new WeakHashMap<View, Float>();
     /** 每个首页一个「跟着 tab 切换走」的看门任务：切 tab 不换 Activity，只能自己盯。 */
     private static final WeakHashMap<Activity, Runnable> WATCHERS = new WeakHashMap<Activity, Runnable>();
+    /** 上一次认到的两颗图标：布局回调偶尔会短暂认不到，不能因此把整层撤掉。 */
+    private static final WeakHashMap<Activity, List<View>> ICON_CACHE = new WeakHashMap<Activity, List<View>>();
     /** 看门间隔。 */
     private static final long WATCH_MS = 600L;
 
@@ -153,6 +155,7 @@ final class WxTopBar {
     /** 页面切走 / 销毁：停采样、还原原生图标。 */
     static void release(Activity act) {
         if (act == null) return;
+        synchronized (ICON_CACHE) { ICON_CACHE.remove(act); }
         TopLayer layer;
         synchronized (LAYERS) { layer = LAYERS.remove(act); }
         if (layer != null) {
@@ -196,12 +199,23 @@ final class WxTopBar {
 
         List<View> icons = findIcons(decor, act, w, h, density);
 
+        // 微信布局重排时会有一两帧认不到图标；这时沿用上一次认到的两颗，
+        // 避免胶囊「有时在、有时不在」地闪。
+        List<View> cached;
+        synchronized (ICON_CACHE) { cached = ICON_CACHE.get(act); }
+        if (icons.size() < 2 && validIcons(cached)) {
+            icons = new ArrayList<View>(cached);
+        }
+
         // 硬保证：「我」那一页保持 100% 原生。
         // 判据就是「右上角有没有搜索和＋」——「我」页本来就没有这两颗，
         // 认不到就整层不画（渐变也不画），所以它不可能被我们改到。
         if (icons.isEmpty()) {
             release(act);
             return;
+        }
+        if (icons.size() >= 2) {
+            synchronized (ICON_CACHE) { ICON_CACHE.put(act, new ArrayList<View>(icons)); }
         }
 
         Rect union = new Rect(Integer.MAX_VALUE, Integer.MAX_VALUE, 0, 0);
@@ -291,6 +305,14 @@ final class WxTopBar {
                                      float density, boolean dark) {
         // 之前那一版是给微信的标题栏容器换背景，容易被它自己重新 setBackground 顶掉，
         // 也会影响别的页面。现在渐变画在我们自己的层里，微信一个控件都不用动。
+    }
+
+    private static boolean validIcons(List<View> icons) {
+        if (icons == null || icons.size() < 2) return false;
+        for (View v : icons) {
+            if (v == null || !v.isAttachedToWindow() || !v.isShown()) return false;
+        }
+        return true;
     }
 
     private static boolean isDark(Activity act) {

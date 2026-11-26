@@ -131,6 +131,7 @@ public final class WxEntry implements IXposedHookLoadPackage, IXposedHookZygoteI
                         Object self = param.thisObject;
                         if (!(self instanceof Activity)) return;
                         final Activity act = (Activity) self;
+                        WechatGlass.setVerbose(DockPrefs.logEnabled(act));
                         WxDockController.onAnyResume(act);
                         WxSettingsEntry.maybeInstall(act);
                         WxChatTime.maybeAttach(act);
@@ -224,6 +225,7 @@ public final class WxEntry implements IXposedHookLoadPackage, IXposedHookZygoteI
                             if (!(self instanceof Application)) return;
                             Application app = (Application) self;
                             try {
+                                WechatGlass.setVerbose(DockPrefs.logEnabled(app));
                                 SettingsSync.register(app);
                             } catch (Throwable t) {
                                 WechatGlass.warnOnce("settings-register",
@@ -328,6 +330,7 @@ public final class WxEntry implements IXposedHookLoadPackage, IXposedHookZygoteI
                 @Override
                 public void onActivityResumed(Activity activity) {
                     try {
+                        WechatGlass.setVerbose(DockPrefs.logEnabled(activity));
                         WxDockController.onAnyResume(activity);
                         WxSettingsEntry.maybeInstall(activity);
                         WxPlusPage.watch(activity);

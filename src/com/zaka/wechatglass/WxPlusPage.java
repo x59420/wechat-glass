@@ -500,7 +500,9 @@ final class WxPlusPage {
                         // 只加纵向留白，不要横向再撑一圈：
                         // 横向 padding 会把原本刚好放得下的菜单文字挤到换行。
                         int pad = (int) (8 * density);
-                        group.setPadding(orig[0], orig[1] + pad,
+                        // 上面不再额外加留白：用户反馈弹层顶部空太多。
+                        // 只补底部一点，文字整体往上收。
+                        group.setPadding(orig[0], orig[1],
                                 orig[2], orig[3] + pad);
                         group.setClipToPadding(false);
                     }
