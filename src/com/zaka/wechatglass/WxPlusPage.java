@@ -53,6 +53,10 @@ final class WxPlusPage {
     private static final WeakHashMap<View, Boolean> STYLED = new WeakHashMap<View, Boolean>();
     /** 面板容器 -> 已经插进去的那一行，避免重复插入。 */
     private static final WeakHashMap<ViewGroup, View> ROWS = new WeakHashMap<ViewGroup, View>();
+    /** 每个页面最近一次扫描的时间：布局回调可能很密，节流到 200ms 一次。 */
+    private static final WeakHashMap<Activity, Long> LAST_SCAN = new WeakHashMap<Activity, Long>();
+    /** 面板关闭的看门狗：PopupWindow 关掉不一定有布局回调，靠它把 Dock 放回来。 */
+    private static final WeakHashMap<Activity, Boolean> CLOSE_WATCH = new WeakHashMap<Activity, Boolean>();
 
     private static final Handler MAIN = new Handler(Looper.getMainLooper());
 
@@ -158,6 +162,12 @@ final class WxPlusPage {
 
     private static void scan(Activity act) {
         if (act == null || act.isFinishing()) return;
+        long now = android.os.SystemClock.uptimeMillis();
+        synchronized (LAST_SCAN) {
+            Long last = LAST_SCAN.get(act);
+            if (last != null && now - last < 200L) return;
+            LAST_SCAN.put(act, now);
+        }
         View decor = act.getWindow() == null ? null : act.getWindow().getDecorView();
         if (!(decor instanceof ViewGroup)) return;
 
@@ -177,7 +187,10 @@ final class WxPlusPage {
             return;
         }
 
-        if (host) WxDockController.setCovered(act, true);
+        if (host) {
+            WxDockController.setCovered(act, true);
+            watchPanelClose(act);
+        }
         if (injectRow(act, panel, markers)) {
             detachPillOnly(act);
         } else {
@@ -302,6 +315,45 @@ final class WxPlusPage {
             WechatGlass.warnOnce("row-add", "入口:插进面板失败: " + t);
             return false;
         }
+    }
+
+    /** 面板关掉之后把 Dock 放回来（PopupWindow 关闭时 Activity 不一定有布局回调）。 */
+    private static void watchPanelClose(final Activity act) {
+        synchronized (CLOSE_WATCH) {
+            if (CLOSE_WATCH.get(act) != null) return;
+            CLOSE_WATCH.put(act, Boolean.TRUE);
+        }
+        MAIN.postDelayed(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    if (act.isFinishing() || act.isDestroyed()) {
+                        finishWatch(act);
+                        return;
+                    }
+                    View decor = act.getWindow() == null ? null : act.getWindow().getDecorView();
+                    if (decor == null) {
+                        finishWatch(act);
+                        return;
+                    }
+                    java.util.Set<String> words = new java.util.HashSet<String>();
+                    List<View> left = findMarkers(decor, words);
+                    if (left.size() < 2 || words.size() < 2) {
+                        removeRow();
+                        detachPillOnly(act);
+                        WxDockController.setCovered(act, false);
+                        finishWatch(act);
+                        return;
+                    }
+                } catch (Throwable ignored) {
+                }
+                MAIN.postDelayed(this, 700L);
+            }
+        }, 700L);
+    }
+
+    private static void finishWatch(Activity act) {
+        synchronized (CLOSE_WATCH) { CLOSE_WATCH.remove(act); }
     }
 
     private static void removeRow() {
