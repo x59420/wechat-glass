@@ -77,6 +77,8 @@ final class WxDockController {
     private static volatile Activity TOP;
     /** 最后一个 resume 的页面不是首页：在它退出前，轮询不允许把 Dock 再显示出来。 */
     private static volatile boolean NON_HOST;
+    /** 非首页期间持续把微信原生底栏压成透明，防止微信重建节点后重新露出来。 */
+    private static Runnable SUPPRESS_GUARD;
 
     /**
      * 系统自己记的「当前前台是哪个页面」。
@@ -161,7 +163,43 @@ final class WxDockController {
     /** 立刻收起所有首页上的 Dock，不等轮询。 */
     static void suppress(boolean value) {
         NON_HOST = value;
-        if (value) hideAll();
+        if (value) {
+            hideAll();
+            startSuppressGuard();
+        } else {
+            stopSuppressGuard();
+        }
+    }
+
+    private static void startSuppressGuard() {
+        stopSuppressGuard();
+        Runnable guard = new Runnable() {
+            @Override
+            public void run() {
+                if (!NON_HOST) return;
+                java.util.List<Activity> hosts;
+                synchronized (KNOWN) { hosts = new ArrayList<Activity>(KNOWN.keySet()); }
+                for (Activity a : hosts) {
+                    try {
+                        if (a == null || a.isFinishing() || a.isDestroyed()) continue;
+                        View decor = safeDecor(a);
+                        if (decor == null) continue;
+                        ViewGroup bar = WxTabBar.find(decor, a);
+                        if (bar != null) SelfMask.mask(bar);
+                    } catch (Throwable ignored) {
+                    }
+                }
+                MAIN.postDelayed(this, 200L);
+            }
+        };
+        SUPPRESS_GUARD = guard;
+        MAIN.postDelayed(guard, 60L);
+    }
+
+    private static void stopSuppressGuard() {
+        Runnable old = SUPPRESS_GUARD;
+        SUPPRESS_GUARD = null;
+        if (old != null) MAIN.removeCallbacks(old);
     }
 
     static void hideAll() {
@@ -246,6 +284,7 @@ final class WxDockController {
             // 只有首页真的拿到焦点，才解除「非首页」抑制；
             // 聊天页是半透明/叠层时，首页会先 resume 但拿不到焦点。
             NON_HOST = false;
+            stopSuppressGuard();
             synchronized (RESUMED_AT) { RESUMED_AT.put(act, SystemClock.uptimeMillis()); }
             onHostResume(act);
         }
