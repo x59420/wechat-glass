@@ -80,6 +80,8 @@ final class WxDockController {
     private static volatile Activity TOP;
     /** 最后一个 resume 的页面不是首页：在它退出前，轮询不允许把 Dock 再显示出来。 */
     private static volatile boolean NON_HOST;
+    /** 已经进入聊天/二级页：标题滚出屏幕后仍要保持收起，直到重新看到主 tab 标题。 */
+    private static volatile boolean SUB_PAGE;
     /** 非首页期间持续把微信原生底栏压成透明，防止微信重建节点后重新露出来。 */
     private static Runnable SUPPRESS_GUARD;
 
@@ -611,7 +613,13 @@ final class WxDockController {
                         WxChatTime.detach(act);
                     }
                     boolean nonMain = hasNonMainPageTitle(decor);
-                    boolean blocked = chatOpen || nonMain || (top != null
+                    boolean mainTitle = hasMainTitle(decor);
+                    if (chatOpen || nonMain) {
+                        SUB_PAGE = true;
+                    } else if (mainTitle) {
+                        SUB_PAGE = false;
+                    }
+                    boolean blocked = chatOpen || SUB_PAGE || (top != null
                             && (isBlockedPage(top) || WxChatTime.isChatPage(top)));
                     boolean active = !otherOnTop && !blocked && !NON_HOST;
                     boolean covered;
@@ -699,6 +707,47 @@ final class WxDockController {
         }, WATCHDOG_MS);
 
         return true;
+    }
+
+    /** 顶部是否还是「微信 / 通讯录 / 发现 / 我」主 tab 标题。 */
+    private static boolean hasMainTitle(View root) {
+        if (!(root instanceof ViewGroup)) return false;
+        java.util.ArrayDeque<View> queue = new java.util.ArrayDeque<View>();
+        java.util.IdentityHashMap<View, Boolean> seen =
+                new java.util.IdentityHashMap<View, Boolean>();
+        queue.add(root);
+        int budget = 6000;
+        int[] loc = new int[2];
+        int screenH = root.getResources().getDisplayMetrics().heightPixels;
+        while (!queue.isEmpty() && budget-- > 0) {
+            View v = queue.poll();
+            if (v == null || seen.put(v, Boolean.TRUE) != null) continue;
+            if (v instanceof android.widget.TextView && v.isShown()) {
+                v.getLocationInWindow(loc);
+                if (loc[1] < screenH * 0.18f) {
+                    CharSequence cs = ((android.widget.TextView) v).getText();
+                    if (cs != null) {
+                        String t = cs.toString().trim();
+                        if (t.equals("微信") || t.equals("通讯录") || t.equals("发现")
+                                || t.equals("我") || t.equals("WeChat")
+                                || t.equals("Chats") || t.equals("Contacts")
+                                || t.equals("Discover") || t.equals("Me")) {
+                            return true;
+                        }
+                    }
+                }
+            }
+            if (v instanceof ViewGroup) {
+                ViewGroup g = (ViewGroup) v;
+                for (int i = 0; i < g.getChildCount(); i++) {
+                    View c = g.getChildAt(i);
+                    if (c != null && !c.getClass().getName().startsWith(WechatGlass.PKG)) {
+                        queue.add(c);
+                    }
+                }
+            }
+        }
+        return false;
     }
 
     /** 添加朋友 / 发起群聊这类二级页没有底部输入框，但顶部标题不是主 tab。 */
