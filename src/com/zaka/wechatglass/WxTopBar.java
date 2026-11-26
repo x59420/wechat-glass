@@ -176,10 +176,9 @@ final class WxTopBar {
     }
 
     static void pause(Activity act) {
-        stopWatch(act);
-        TopLayer layer;
-        synchronized (LAYERS) { layer = LAYERS.get(act); }
-        if (layer != null) layer.setActive(false);
+        // 离开首页就把整层撤掉。只 setActive(false) 会把空胶囊留在窗口上，
+        // 聊天页右上角那块黑色药丸就是这么来的。
+        release(act);
     }
 
     static void resume(Activity act) {
@@ -196,6 +195,11 @@ final class WxTopBar {
         if (w < 200 || h < 400) return;
         float density = act.getResources().getDisplayMetrics().density;
         boolean dark = isDark(act);
+        Activity resumed = WxDockController.resumedActivity();
+        if (resumed != null && resumed != act) {
+            release(act);
+            return;
+        }
 
         // 「我」那一页右上角本来就没有搜索 / ＋，也不该被我们碰。
         // 微信首页 = 前三个 tab（微信 / 通讯录 / 发现），第四个是「我」。

@@ -174,6 +174,7 @@ final class WxChatTime {
         private final Map<View, ImageView> avatars = new WeakHashMap<View, ImageView>();
 
         private boolean alive = true;
+        private boolean logged;
 
         private final Runnable tick = new Runnable() {
             @Override
@@ -233,6 +234,20 @@ final class WxChatTime {
                 getLocationInWindow(selfLoc);
 
                 int children = childCount(list);
+                if (!logged) {
+                    logged = true;
+                    int av = 0;
+                    long tv = 0L;
+                    if (children > 0) {
+                        View r = childAt(list, 0);
+                        if (r != null) {
+                            av = avatarOf(r) == null ? 0 : 1;
+                            tv = timeOfRow(list, 0, r);
+                        }
+                    }
+                    WechatGlass.log("聊天时间:list=" + list.getClass().getName()
+                            + " rows=" + children + " avatar=" + av + " time=" + tv);
+                }
                 for (int i = 0; i < children; i++) {
                     View row = childAt(list, i);
                     if (row == null) continue;

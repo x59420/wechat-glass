@@ -204,12 +204,13 @@ final class WxDockController {
         if (act == null) return;
         TOP = act;
         synchronized (RESUMED_AT) { RESUMED_AT.put(act, SystemClock.uptimeMillis()); }
-        if (isBlockedPage(act)) {
-            // 聊天页 / 添加朋友页一出现，先把首页的 Dock 收掉，别等下一次轮询。
+        if (!isHost(act)) {
+            // 任何非首页 Activity（聊天、联系人资料、添加朋友、设置…）压上来，
+            // 先把首页的 Dock 收掉。不要只认几个写死的类名。
             hideAll();
             return;
         }
-        if (isHost(act)) onHostResume(act);
+        onHostResume(act);
     }
 
     /** 页面创建：先记一笔，方便后面判断谁在最上面。 */
@@ -239,7 +240,7 @@ final class WxDockController {
         if (act == null) return;
         // 故意不清空 TOP：清空之后「有没有别的页面压在上面」就变成未知，
         // 轮询里会被判成"没人盖住"而把 Dock 又显示出来。保留最后一个前台页面更安全。
-        if (isHost(act)) hideNow(act);
+        hideAll();
     }
 
     /** 页面要走了（onPause / onStop），立刻收起，不等轮询。 */
@@ -532,7 +533,8 @@ final class WxDockController {
                     Activity top = resumed != null ? resumed : TOP;
                     boolean otherOnTop = top != null && top != act
                             && !top.isFinishing() && !top.isDestroyed();
-                    boolean blocked = top != null && isBlockedPage(top);
+                    boolean blocked = top != null
+                            && (isBlockedPage(top) || WxChatTime.isChatPage(top));
                     boolean active = !otherOnTop && !blocked;
                     boolean covered;
                     synchronized (COVERED) {
