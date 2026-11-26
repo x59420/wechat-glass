@@ -84,6 +84,9 @@ final class WxDockController {
     private static volatile boolean SUB_PAGE;
     /** 非首页期间持续把微信原生底栏压成透明，防止微信重建节点后重新露出来。 */
     private static Runnable SUPPRESS_GUARD;
+    /** 首页 watchdog：微信从资料页/二级页回来时不一定走 Activity.onResume，
+     *  这里定期检查首页是否该有 Dock，没有就补装。 */
+    private static Runnable HOST_WATCH;
 
     /**
      * 系统自己记的「当前前台是哪个页面」。
@@ -207,6 +210,38 @@ final class WxDockController {
         if (old != null) MAIN.removeCallbacks(old);
     }
 
+    private static void startHostWatch() {
+        if (HOST_WATCH != null) return;
+        Runnable watch = new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    java.util.List<Activity> hosts;
+                    synchronized (KNOWN) { hosts = new ArrayList<Activity>(KNOWN.keySet()); }
+                    for (Activity a : hosts) {
+                        if (a == null || a.isFinishing() || a.isDestroyed()) continue;
+                        if (!isHost(a)) continue;
+                        synchronized (OVERLAYS) {
+                            if (OVERLAYS.containsKey(a)) continue;
+                        }
+                        View decor = safeDecor(a);
+                        if (decor == null) continue;
+                        if (hasMainTitle(decor) && !hasChatInput(decor)
+                                && !hasExplicitNonMainTitle(decor)) {
+                            NON_HOST = false;
+                            SUB_PAGE = false;
+                            attempt(a, 0);
+                        }
+                    }
+                } catch (Throwable ignored) {
+                }
+                MAIN.postDelayed(this, 600L);
+            }
+        };
+        HOST_WATCH = watch;
+        MAIN.postDelayed(watch, 600L);
+    }
+
     static void hideAll() {
         java.util.List<Activity> acts;
         synchronized (OVERLAYS) {
@@ -227,6 +262,7 @@ final class WxDockController {
     static void onHostResume(final Activity act) {
         if (DISABLED) return;
         if (!isHost(act)) return;
+        startHostWatch();
         synchronized (KNOWN) {
             KNOWN.put(act, Boolean.TRUE);
         }
