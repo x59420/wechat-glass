@@ -242,7 +242,6 @@ final class WxChatTime {
                 View list = findList();
                 if (list == null) {
                     if (!logged) {
-                        logged = true;
                         WechatGlass.log("聊天时间:按头像回退");
                     }
                     drawAvatars(canvas);
@@ -323,7 +322,25 @@ final class WxChatTime {
                         String cn = v.getClass().getName();
                         if (cn.contains("ChattingAvatar") || cn.contains("AvatarImageView")) {
                             View row = (View) v.getParent();
-                            long time = row == null ? 0L : TimeReader.timeOfView(row);
+                            long time = 0L;
+                            View probe = row;
+                            String path = "";
+                            for (int d = 0; d < 4 && probe != null; d++) {
+                                path += " <- " + probe.getClass().getName()
+                                        + "(tag=" + (probe.getTag() == null ? "null"
+                                        : probe.getTag().getClass().getName()) + ")";
+                                long t = TimeReader.timeOfView(probe);
+                                if (t > 0L) {
+                                    time = t;
+                                    break;
+                                }
+                                Object parent = probe.getParent();
+                                probe = parent instanceof View ? (View) parent : null;
+                            }
+                            if (!logged) {
+                                logged = true;
+                                WechatGlass.log("聊天时间:avatar" + path);
+                            }
                             if (time > 0L) {
                                 int[] al = new int[2];
                                 v.getLocationInWindow(al);
