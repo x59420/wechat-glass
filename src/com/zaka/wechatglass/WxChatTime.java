@@ -317,8 +317,7 @@ final class WxChatTime {
                 while (!q.isEmpty() && budget-- > 0) {
                     View v = q.poll();
                     if (v == null || seen.put(v, Boolean.TRUE) != null) continue;
-                    if (v instanceof ImageView && v.isShown()
-                            && v.getWidth() > 0 && v.getHeight() > 0) {
+                    if (v.isShown() && v.getWidth() > 0 && v.getHeight() > 0) {
                         String cn = v.getClass().getName();
                         if (cn.contains("ChattingAvatar") || cn.contains("AvatarImageView")) {
                             View row = (View) v.getParent();
