@@ -620,10 +620,13 @@ final class WxDockController {
                     }
                     boolean nonMain = hasNonMainPageTitle(decor);
                     boolean mainTitle = hasMainTitle(decor);
-                    if (chatOpen || nonMain) {
+                    if (chatOpen) {
                         SUB_PAGE = true;
                     } else if (mainTitle) {
+                        // 主 tab 标题优先：列表里“微信运动”这种文字不能被当成二级页标题。
                         SUB_PAGE = false;
+                    } else if (nonMain) {
+                        SUB_PAGE = true;
                     }
                     boolean blocked = chatOpen || SUB_PAGE || (top != null
                             && (isBlockedPage(top) || WxChatTime.isChatPage(top)));
@@ -788,7 +791,14 @@ final class WxDockController {
                                     || t.equals("微信团队") || t.equals("微信运动")) return true;
                             // 顶部居中的二级页标题：微信支付 / 服务号 / 公众号文章…
                             int screenW = root.getResources().getDisplayMetrics().widthPixels;
+                            int status = root.getResources().getIdentifier(
+                                    "status_bar_height", "dimen", "android");
+                            int statusH = status > 0
+                                    ? root.getResources().getDimensionPixelSize(status)
+                                    : (int) (26 * root.getResources().getDisplayMetrics().density);
                             if (loc[0] > screenW * 0.22f && loc[0] < screenW * 0.78f
+                                    && loc[1] < statusH + 80 * root.getResources()
+                                    .getDisplayMetrics().density
                                     && t.length() > 0 && t.length() <= 16) {
                                 return true;
                             }
