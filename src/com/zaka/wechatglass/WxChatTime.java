@@ -87,7 +87,8 @@ final class WxChatTime {
         if (act == null) return false;
         try {
             String name = act.getClass().getName().toLowerCase(Locale.ROOT);
-            return name.contains("chatting") || name.contains("chatroom");
+            return name.contains("chatting") || name.contains("chatroom")
+                    || name.contains("chat");
         } catch (Throwable t) {
             return false;
         }
@@ -95,7 +96,11 @@ final class WxChatTime {
 
     /** 聊天页回来后装浮层；设置里关掉了就顺手摘掉。 */
     static void maybeAttach(Activity act) {
-        if (act == null || !isChatPage(act)) return;
+        if (act == null) return;
+        WechatGlass.warnOnce("chattime-page-" + act.getClass().getName(),
+                "聊天时间:页面 " + act.getClass().getSimpleName()
+                        + " isChat=" + isChatPage(act));
+        if (!isChatPage(act)) return;
         Context ctx = WechatGlass.context();
         if (ctx != null && !DockPrefs.chatTime(ctx)) {
             detach(act);
@@ -271,6 +276,7 @@ final class WxChatTime {
                     View v = stack.remove(stack.size() - 1);
                     if (v == null) continue;
                     if (v instanceof RecyclerView || v instanceof ListView) {
+                        if (!v.isShown() || v.getVisibility() != View.VISIBLE) continue;
                         int area = v.getWidth() * v.getHeight();
                         if (area > bestArea) {
                             bestArea = area;
@@ -371,7 +377,9 @@ final class WxChatTime {
                         ImageView candidate = (ImageView) v;
                         int w = candidate.getWidth();
                         int h = candidate.getHeight();
-                        if (w >= minAvatarPx && w <= maxAvatarPx && Math.abs(w - h) <= 2) {
+                        if (candidate.isShown()
+                                && w >= minAvatarPx && w <= maxAvatarPx
+                                && Math.abs(w - h) <= 2) {
                             int[] loc = new int[2];
                             candidate.getLocationInWindow(loc);
                             int[] rowLoc = new int[2];

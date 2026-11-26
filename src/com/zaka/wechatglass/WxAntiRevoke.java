@@ -48,6 +48,7 @@ final class WxAntiRevoke {
                 if (cls == null) continue;
                 count += hookUpdate(cls, "update");
                 count += hookUpdate(cls, "updateWithOnConflict");
+                count += hookExecSql(cls);
             } catch (Throwable t) {
                 WechatGlass.warnOnce("revoke-" + name, "防撤回:挂 " + name + " 失败: " + t);
             }
@@ -103,6 +104,9 @@ final class WxAntiRevoke {
                                 blocked++;
                                 WechatGlass.log("防撤回:拦下一条（表=" + table + " 内容="
                                         + brief(content) + "）累计 " + blocked);
+                                if (context != null) {
+                                    WechatGlass.toast(context, "wxglass：已拦截一条撤回消息");
+                                }
                             } catch (Throwable t) {
                                 WechatGlass.warnOnce("revoke-" + methodName,
                                         "防撤回:判断失败（放行）: " + t);
@@ -119,12 +123,67 @@ final class WxAntiRevoke {
         return count;
     }
 
+    /** 有些版本用 execSQL 直接写 SQL，ContentValues 那条路就抓不到。 */
+    private static int hookExecSql(Class<?> cls) {
+        int count = 0;
+        java.util.IdentityHashMap<Method, Boolean> seen =
+                new java.util.IdentityHashMap<Method, Boolean>();
+        for (Class<?> c = cls; c != null; c = c.getSuperclass()) {
+            for (Method method : c.getDeclaredMethods()) {
+                try {
+                    if (!method.getName().startsWith("execSQL")) continue;
+                    if (seen.put(method, Boolean.TRUE) != null) continue;
+                    Class<?>[] types = method.getParameterTypes();
+                    if (types.length < 1 || types[0] != String.class) continue;
+                    XposedBridge.hookMethod(method, new XC_MethodHook() {
+                        @Override
+                        protected void beforeHookedMethod(MethodHookParam param) {
+                            try {
+                                if (param.args.length < 1 || !(param.args[0] instanceof String)) return;
+                                String sql = (String) param.args[0];
+                                String lower = sql.toLowerCase(java.util.Locale.ROOT);
+                                if (!lower.contains("update") || !lower.contains("message")) return;
+                                boolean revoke = lower.contains("撤回")
+                                        || lower.contains("revoke")
+                                        || lower.contains("recall");
+                                if (!revoke && param.args.length > 1 && param.args[1] instanceof Object[]) {
+                                    for (Object arg : (Object[]) param.args[1]) {
+                                        if (isRevokeText(asString(arg))) {
+                                            revoke = true;
+                                            break;
+                                        }
+                                    }
+                                }
+                                if (!revoke) return;
+                                Context context = WechatGlass.context();
+                                if (context != null && !DockPrefs.antiRevoke(context)) return;
+                                param.setResult(null);
+                                blocked++;
+                                WechatGlass.log("防撤回:拦下 SQL 撤回，累计 " + blocked);
+                                if (context != null) {
+                                    WechatGlass.toast(context, "wxglass：已拦截一条撤回消息");
+                                }
+                            } catch (Throwable t) {
+                                WechatGlass.warnOnce("revoke-sql", "防撤回:SQL 判断失败: " + t);
+                            }
+                        }
+                    });
+                    count++;
+                } catch (Throwable t) {
+                    WechatGlass.warnOnce("revoke-sql-method", "防撤回:挂 execSQL 失败: " + t);
+                }
+            }
+        }
+        return count;
+    }
+
     /** 撤回文案：中文「撤回了一条消息」，英文包是 "recalled a message"。 */
     private static boolean isRevokeText(String content) {
         if (content == null || content.isEmpty()) return false;
         if (content.contains("撤回")) return true;
         String lower = content.toLowerCase();
-        return lower.contains("recall") || lower.contains("unsend");
+        return lower.contains("recall") || lower.contains("unsend")
+                || lower.contains("revoke") || lower.contains("revokemsg");
     }
 
     private static String asString(Object value) {
