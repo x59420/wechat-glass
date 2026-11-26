@@ -183,6 +183,7 @@ final class WxDockController {
 
     static void onHostResume(final Activity act) {
         if (!isHost(act)) return;
+        if (NON_HOST) return;
         synchronized (KNOWN) {
             KNOWN.put(act, Boolean.TRUE);
         }
@@ -246,6 +247,7 @@ final class WxDockController {
             // 聊天页是半透明/叠层时，首页会先 resume 但拿不到焦点。
             NON_HOST = false;
             synchronized (RESUMED_AT) { RESUMED_AT.put(act, SystemClock.uptimeMillis()); }
+            onHostResume(act);
         }
     }
 
