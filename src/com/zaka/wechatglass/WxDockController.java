@@ -849,7 +849,8 @@ final class WxDockController {
                     CharSequence cs = ((android.widget.TextView) v).getText();
                     if (cs != null) {
                         String t = cs.toString().trim();
-                        if (t.equals("微信") || t.equals("通讯录") || t.equals("发现")
+                        if (t.equals("微信") || t.startsWith("微信(")
+                                || t.equals("通讯录") || t.equals("发现")
                                 || t.equals("我") || t.equals("WeChat")
                                 || t.equals("Chats") || t.equals("Contacts")
                                 || t.equals("Discover") || t.equals("Me")) {
