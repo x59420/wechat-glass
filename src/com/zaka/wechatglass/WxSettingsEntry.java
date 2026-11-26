@@ -76,7 +76,12 @@ final class WxSettingsEntry {
         if (act == null) return false;
         try {
             String name = act.getClass().getName();
-            return name.endsWith("SettingsUI") || name.endsWith("SettingsUIForMine");
+            return name.endsWith("SettingsUI")
+                    || name.endsWith("SettingsUIForMine")
+                    || name.endsWith("SettingsUIForChatting")
+                    // 有些版本把设置页收进别的包名/内部类，类名里仍有 Setting。
+                    || (name.toLowerCase(java.util.Locale.ROOT).contains("setting")
+                    && name.endsWith("UI"));
         } catch (Throwable t) {
             return false;
         }
@@ -95,13 +100,13 @@ final class WxSettingsEntry {
                 try {
                     if (act.isFinishing() || act.isDestroyed()) return;
                     if (install(act)) return;
-                    if (attempt < 6) schedule(act, attempt + 1);
+                    if (attempt < 10) schedule(act, attempt + 1);
                 } catch (Throwable t) {
                     WechatGlass.warnOnce("settings-entry",
                             "设置入口处理失败: " + t);
                 }
             }
-        }, attempt == 0 ? 320L : 420L);
+        }, attempt == 0 ? 80L : 140L);
     }
 
     private static boolean install(Activity act) {
@@ -231,12 +236,6 @@ final class WxSettingsEntry {
     }
 
     private static boolean isDark(Activity act) {
-        try {
-            return (act.getResources().getConfiguration().uiMode
-                    & android.content.res.Configuration.UI_MODE_NIGHT_MASK)
-                    == android.content.res.Configuration.UI_MODE_NIGHT_YES;
-        } catch (Throwable t) {
-            return false;
-        }
+        return WxTheme.isDark(act);
     }
 }

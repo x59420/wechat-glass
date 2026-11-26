@@ -120,6 +120,8 @@ final class WxDockController {
     private static final WeakHashMap<Activity, Boolean> COVERED = new WeakHashMap<Activity, Boolean>();
     /** 首页窗口当前有没有焦点。失焦基本等于「被别的页面/弹窗盖住了」。 */
     private static final WeakHashMap<Activity, Boolean> FOCUSED = new WeakHashMap<Activity, Boolean>();
+    /** 底栏被遮挡的连续轮询次数：避免转场时一帧盖住、一帧不盖造成 Dock 频闪。 */
+    private static final WeakHashMap<Activity, Integer> COVER_COUNT = new WeakHashMap<Activity, Integer>();
 
     private WxDockController() {
     }
@@ -554,13 +556,23 @@ final class WxDockController {
                     boolean front = !covered && (focused || justResumed);
                     // 窗口本身不可见（被别的页面完全盖住）时也不用画。
                     boolean windowVisible = iso.view().getWindowVisibility() == View.VISIBLE;
+                    boolean coveredByView = currentBar != null && barCovered(decor, currentBar);
+                    int coverCount;
+                    synchronized (COVER_COUNT) {
+                        Integer old = COVER_COUNT.get(act);
+                        coverCount = old == null ? 0 : old;
+                        coverCount = coveredByView
+                                ? Math.min(3, coverCount + 1)
+                                : Math.max(0, coverCount - 1);
+                        COVER_COUNT.put(act, coverCount);
+                    }
                     boolean wantShow = active && front && windowVisible
                             && currentBar != null
                             && currentBar.isAttachedToWindow()
                             && currentBar.getVisibility() == View.VISIBLE
                             && SelfMask.effectiveAlpha(currentBar) > 0.01f
                             && currentBar.getWidth() > 0
-                            && !barCovered(decor, currentBar);
+                            && !(coveredByView && coverCount >= 2);
 
                     // 显隐跟实际画面对齐，而不是跟一个一次性的布尔位：
                     // 从聊天页回来时玻璃层可能已经被上一步设成 GONE，只看布尔位就不会再显示。
