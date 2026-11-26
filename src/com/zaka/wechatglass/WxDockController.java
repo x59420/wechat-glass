@@ -270,9 +270,9 @@ final class WxDockController {
             hideAll();
             return;
         }
-        // 首页在聊天页下面 resume 时，不能把 NON_HOST 清掉；
-        // 只有首页真正拿到焦点（onFocusChanged）才恢复。
-        if (!NON_HOST) onHostResume(act);
+        // 首页 resume 一定要走安装流程；install 内部会根据主标题 / 聊天输入框
+        // 决定是清掉旧状态重新挂 Dock，还是继续跳过。
+        onHostResume(act);
     }
 
     /** 页面创建：先记一笔，方便后面判断谁在最上面。 */
