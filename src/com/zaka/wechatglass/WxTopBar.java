@@ -247,6 +247,7 @@ final class WxTopBar {
             if (layer == null) return;
         }
         layer.setBandBottom(bandBottomOf(decor, act, density));
+        layer.setTitleView(findTitleView(decor, act, density));
         layer.bind(act, dark, capsule, icons, union);
     }
 
@@ -310,16 +311,11 @@ final class WxTopBar {
 
     /** 标题栏里有没有「微信 / 通讯录 / 发现」这种已知 tab 标题（找到才认为可以画顶栏）。 */
     private static boolean hasKnownTitle(View decor, Activity act, float density) {
-        return titleBottom(decor, act, density) > 0;
+        return findTitleView(decor, act, density) != null;
     }
 
-    /**
-     * 标题栏底边在窗口里的 y（找不到返回 -1）。
-     *
-     * 渐变要「从顶栏往上淡出去」，所以必须要知道标题栏到底那一行在哪，
-     * 不能再拿胶囊位置凑 —— 胶囊位置会随图标大小漂。
-     */
-    private static int titleBottom(View decor, Activity act, float density) {
+    /** 找出标题栏那个标题 View（微信 / 通讯录 / 发现）。 */
+    private static View findTitleView(View decor, Activity act, float density) {
         try {
             int limitY = statusBarHeight(act) + (int) (58 * density);
             ArrayDeque<View> queue = new ArrayDeque<View>();
@@ -347,12 +343,30 @@ final class WxTopBar {
                 if (value.equals("微信") || value.equals("通讯录") || value.equals("发现")
                         || value.equals("WeChat") || value.equals("Chats")
                         || value.equals("Contacts") || value.equals("Discover")) {
-                    return loc[1] + v.getHeight();
+                    return v;
                 }
             }
         } catch (Throwable ignored) {
         }
-        return -1;
+        return null;
+    }
+
+    /**
+     * 标题栏底边在窗口里的 y（找不到返回 -1）。
+     *
+     * 渐变要「从顶栏往上淡出去」，所以必须要知道标题栏到底那一行在哪，
+     * 不能再拿胶囊位置凑 —— 胶囊位置会随图标大小漂。
+     */
+    private static int titleBottom(View decor, Activity act, float density) {
+        View title = findTitleView(decor, act, density);
+        if (title == null) return -1;
+        try {
+            int[] loc = new int[2];
+            title.getLocationInWindow(loc);
+            return loc[1] + title.getHeight();
+        } catch (Throwable t) {
+            return -1;
+        }
     }
 
     private static int statusBarHeight(Activity act) {
@@ -461,6 +475,8 @@ final class WxTopBar {
         private boolean dark;
         /** 渐变带底边（窗口坐标）；0 = 还不知道，先按默认算。 */
         private int bandBottomWindow;
+        /** 原生标题（微信 / 通讯录 / 发现）：渐变画完再把它盖回去，字不跟着糊。 */
+        private View titleView;
 
         /** 渐变那条要不要重采样：只有页面滚动 / 布局变化时才置 true。 */
         private boolean bandDirty = true;
@@ -690,6 +706,10 @@ final class WxTopBar {
             watchedRoot = null;
         }
 
+        void setTitleView(View view) {
+            titleView = view;
+        }
+
         void setBandBottom(int windowY) {
             if (windowY > 0 && windowY != bandBottomWindow) {
                 bandBottomWindow = windowY;
@@ -788,6 +808,26 @@ final class WxTopBar {
                         new float[]{0f, 0.45f, 1f}, Shader.TileMode.CLAMP));
                 canvas.drawRect(0, 0, getWidth(), scrimBounds.height(), scrim);
                 scrim.setShader(null);
+            }
+
+            // 标题文字不受渐变影响：把原生标题原样再画一遍到最上面。
+            // 这样玻璃带是连续的，但「微信 / 通讯录 / 发现」这几个字永远是清晰的，
+            // 不会被模糊层或渐变雾压住。
+            View title = titleView;
+            if (title != null && title.isShown() && title.getWidth() > 0
+                    && title.getHeight() > 0) {
+                try {
+                    int[] self = new int[2];
+                    int[] loc = new int[2];
+                    getLocationInWindow(self);
+                    title.getLocationInWindow(loc);
+                    int save = canvas.save();
+                    canvas.translate(loc[0] - self[0], loc[1] - self[1]);
+                    canvas.clipRect(0, 0, title.getWidth(), title.getHeight());
+                    title.draw(canvas);
+                    canvas.restoreToCount(save);
+                } catch (Throwable ignored) {
+                }
             }
         }
 
