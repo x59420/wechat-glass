@@ -413,9 +413,9 @@ final class WxChatTime {
                             || vc.contains("WxRecyclerView") || vc.contains("MMListView");
                     if (isList) {
                         if (!v.isShown() || v.getVisibility() != View.VISIBLE) continue;
-                        // 聊天消息里一定有 ChattingAvatar / viewitems.chatting；
-                        // 通讯录的 PullDownListView 不算。
-                        if (hasChattingChild(v, 0)) return v;
+                        // 只认真正的 RecyclerView；MMChattingListView 只是外壳，
+                        // 里面的 ScrollControlRecyclerView 才是消息行容器。
+                        if (vc.contains("RecyclerView") && hasChattingChild(v, 0)) return v;
                         continue;
                     }
                     if (v instanceof ViewGroup) {
