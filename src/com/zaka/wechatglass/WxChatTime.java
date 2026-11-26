@@ -243,9 +243,9 @@ final class WxChatTime {
                 if (list == null) {
                     if (!logged) {
                         logged = true;
-                        WechatGlass.log("聊天时间:未找到消息列表");
-                        dumpLists();
+                        WechatGlass.log("聊天时间:按头像回退");
                     }
+                    drawAvatars(canvas);
                     return;
                 }
                 getLocationInWindow(selfLoc);
@@ -294,6 +294,49 @@ final class WxChatTime {
         }
 
         // -------------------------------------------------------- 找列表 / 行 / 头像
+
+        /** 不依赖列表容器：直接扫 ChattingAvatarImageView，时间从行 tag 取。 */
+        private void drawAvatars(Canvas canvas) {
+            try {
+                View decor = host.getWindow() == null ? null : host.getWindow().getDecorView();
+                if (decor == null) return;
+                getLocationInWindow(selfLoc);
+                java.util.ArrayDeque<View> q = new java.util.ArrayDeque<View>();
+                java.util.IdentityHashMap<View, Boolean> seen =
+                        new java.util.IdentityHashMap<View, Boolean>();
+                q.add(decor);
+                int budget = 20000;
+                while (!q.isEmpty() && budget-- > 0) {
+                    View v = q.poll();
+                    if (v == null || seen.put(v, Boolean.TRUE) != null) continue;
+                    if (v instanceof ImageView && v.isShown()
+                            && v.getWidth() > 0 && v.getHeight() > 0) {
+                        String cn = v.getClass().getName();
+                        if (cn.contains("ChattingAvatar") || cn.contains("AvatarImageView")) {
+                            View row = (View) v.getParent();
+                            long time = row == null ? 0L : TimeReader.timeOfView(row);
+                            if (time > 0L) {
+                                int[] al = new int[2];
+                                v.getLocationInWindow(al);
+                                float cx = al[0] - selfLoc[0] + v.getWidth() / 2f;
+                                float top = al[1] - selfLoc[1];
+                                if (top > gapPx) {
+                                    canvas.drawText(format.format(new Date(time)),
+                                            cx, top - gapPx, paint);
+                                }
+                            }
+                        }
+                    }
+                    if (v instanceof ViewGroup) {
+                        ViewGroup g = (ViewGroup) v;
+                        for (int i = 0; i < g.getChildCount(); i++) {
+                            q.add(g.getChildAt(i));
+                        }
+                    }
+                }
+            } catch (Throwable ignored) {
+            }
+        }
 
         private void dumpLists() {
             try {
