@@ -370,6 +370,23 @@ final class WxChatTime {
             }
         }
 
+        private boolean hasChattingChild(View v, int depth) {
+            if (v == null || depth > 4) return false;
+            if (v instanceof ViewGroup) {
+                ViewGroup g = (ViewGroup) v;
+                for (int i = 0; i < g.getChildCount(); i++) {
+                    View c = g.getChildAt(i);
+                    if (c == null) continue;
+                    String n = c.getClass().getName();
+                    if (n.contains("ChattingAvatar") || n.contains("chatting.viewitems")) {
+                        return true;
+                    }
+                    if (hasChattingChild(c, depth + 1)) return true;
+                }
+            }
+            return false;
+        }
+
         private View findList() {
             try {
                 View decor = host.getWindow() == null ? null : host.getWindow().getDecorView();
@@ -387,11 +404,9 @@ final class WxChatTime {
                             || vc.contains("WxRecyclerView") || vc.contains("MMListView");
                     if (isList) {
                         if (!v.isShown() || v.getVisibility() != View.VISIBLE) continue;
-                        int area = v.getWidth() * v.getHeight();
-                        if (area > bestArea) {
-                            bestArea = area;
-                            best = v;
-                        }
+                        // 聊天消息里一定有 ChattingAvatar / viewitems.chatting；
+                        // 通讯录的 PullDownListView 不算。
+                        if (hasChattingChild(v, 0)) return v;
                         continue;
                     }
                     if (v instanceof ViewGroup) {
