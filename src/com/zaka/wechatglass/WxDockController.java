@@ -383,6 +383,10 @@ final class WxDockController {
         ViewGroup bar = WxTabBar.find(decor, act);
         if (bar == null) return false;
 
+        // 先藏原生底栏，再慢慢建玻璃。否则冷启动时原生底栏会一直露着，
+        // 直到用户滑一下触发玻璃绘制才被藏掉。
+        SelfMask.mask(bar);
+
         List<View> items = WxTabBar.items(bar);
         if (items.size() < 3) {
             // 认到底栏本身就够了：格子可能还没布局完，先按等分接管，
@@ -471,6 +475,7 @@ final class WxDockController {
         }
         if (created == null) {
             WechatGlass.warn("底栏:两套渲染器都没起来，保留微信原生底栏");
+            SelfMask.restore(bar);
             return true;
         }
         final DockLayer iso = created;
@@ -481,6 +486,7 @@ final class WxDockController {
         } catch (Throwable t) {
             WechatGlass.error("底栏:玻璃层挂不上窗口", t);
             iso.dispose();
+            SelfMask.restore(bar);
             return true;
         }
 
