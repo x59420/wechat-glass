@@ -33,11 +33,18 @@ final class GlassDrawable extends Drawable {
 
     private final float radiusPx;
     private final boolean dark;
+    /** 弹层这类要装文字的，底子必须够实，否则字压在一堆花色上看不清。 */
+    private final boolean dense;
     private Bitmap backdrop;
 
     GlassDrawable(float radiusPx, boolean dark) {
+        this(radiusPx, dark, false);
+    }
+
+    GlassDrawable(float radiusPx, boolean dark, boolean dense) {
         this.radiusPx = radiusPx;
         this.dark = dark;
+        this.dense = dense;
     }
 
     void setBackdrop(Bitmap bitmap) {
@@ -59,15 +66,28 @@ final class GlassDrawable extends Drawable {
 
         if (backdrop != null && !backdrop.isRecycled()) {
             dst.set(bounds);
+            // 弹层里要放文字：背景图只留一点点，别跟字抢。
+            imagePaint.setAlpha(dense ? 90 : 255);
             canvas.drawBitmap(backdrop, null, dst, imagePaint);
+            imagePaint.setAlpha(255);
         }
 
         surfacePaint.setShader(null);
-        surfacePaint.setColor(dark ? 0x59101318 : 0x59FFFFFF);
+        // dense：实底。浅色模式接近纯白 + 一点冷调，深色模式一块深灰蓝，
+        // 不管背后是聊天列表还是图片，字都压得住。
+        if (dense) {
+            surfacePaint.setColor(dark ? 0xF21A1C22 : 0xF7FFFFFF);
+        } else {
+            surfacePaint.setColor(dark ? 0x59101318 : 0x59FFFFFF);
+        }
         canvas.drawRect(bounds, surfacePaint);
 
         surfacePaint.setShader(new LinearGradient(0, bounds.top, 0, bounds.bottom,
-                new int[]{dark ? 0x33FFFFFF : 0x4DFFFFFF,
+                dense
+                        ? new int[]{dark ? 0x1FFFFFFF : 0x26FFFFFF,
+                        dark ? 0x0AFFFFFF : 0x0AFFFFFF,
+                        dark ? 0x22000000 : 0x0F000000}
+                        : new int[]{dark ? 0x33FFFFFF : 0x4DFFFFFF,
                         dark ? 0x0DFFFFFF : 0x14FFFFFF,
                         dark ? 0x33000000 : 0x12000000},
                 new float[]{0f, 0.55f, 1f}, Shader.TileMode.CLAMP));

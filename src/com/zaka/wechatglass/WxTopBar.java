@@ -6,6 +6,7 @@ import android.graphics.Canvas;
 import android.graphics.LinearGradient;
 import android.graphics.Paint;
 import android.graphics.Rect;
+import android.graphics.RectF;
 import android.graphics.Shader;
 import android.graphics.drawable.Drawable;
 import android.os.SystemClock;
@@ -128,9 +129,16 @@ final class WxTopBar {
         float density = act.getResources().getDisplayMetrics().density;
         boolean dark = isDark(act);
 
-        List<View> icons = findIcons(decor, w, h, density);
-        if (icons.size() < 2) {
-            // 认不到两颗就不动：宁可没效果，也不能把顶栏改成四不像。
+        // 「我」那一页右上角本来就没有搜索 / ＋，也不该被我们碰。
+        // 微信首页 = 前三个 tab（微信 / 通讯录 / 发现），第四个是「我」。
+        if (isMeTab(decor, act)) {
+            release(act);
+            return;
+        }
+
+        List<View> icons = findIcons(decor, act, w, h, density);
+        if (icons.isEmpty()) {
+            // 认不到就不动：宁可没效果，也不能把顶栏改成四不像。
             return;
         }
 
@@ -186,21 +194,57 @@ final class WxTopBar {
         }
     }
 
-    /** 右上角那两颗图标（搜索 / ＋）。只认最上面一带、右半边、尺寸像图标的 ImageView。 */
-    private static List<View> findIcons(ViewGroup decor, int w, int h, float density) {
+    /** 「我」tab 是否为当前页。 */
+    private static boolean isMeTab(ViewGroup decor, Activity act) {
+        try {
+            ViewGroup bar = WxTabBar.find(decor, act);
+            if (bar == null) return false;
+            List<View> items = WxTabBar.items(bar);
+            if (items == null || items.size() < 4) return false;
+            return WxTabBar.selectedIndex(items) == 3;
+        } catch (Throwable t) {
+            return false;
+        }
+    }
+
+    private static int statusBarHeight(Activity act) {
+        try {
+            if (android.os.Build.VERSION.SDK_INT >= 30) {
+                android.view.WindowInsets insets = act.getWindow()
+                        .getDecorView().getRootWindowInsets();
+                if (insets != null) {
+                    return insets.getInsets(android.view.WindowInsets.Type.statusBars()).top;
+                }
+            }
+            int id = act.getResources().getIdentifier("status_bar_height", "dimen", "android");
+            if (id > 0) return act.getResources().getDimensionPixelSize(id);
+        } catch (Throwable ignored) {
+        }
+        return (int) (26 * act.getResources().getDisplayMetrics().density);
+    }
+
+    /**
+     * 右上角那几颗图标（搜索 / ＋）。
+     *
+     * 之前的条件太窄：只认 ImageView、还要 14~64dp、还要落在固定比例里。
+     * 微信不同版本把图标包在 FrameLayout、TextView、ImageButton 里都有，
+     * 条件一严就"永远认不到"，顶栏玻璃自然从来不会出现。
+     * 现在按「长得像图标 + 在右上角 + 能点」来认，ImageView 只是其中一种。
+     */
+    private static List<View> findIcons(ViewGroup decor, Activity act, int w, int h,
+                                        float density) {
         List<View> found = new ArrayList<View>();
         ArrayDeque<View> queue = new ArrayDeque<View>();
         IdentityHashMap<View, Boolean> seen = new IdentityHashMap<View, Boolean>();
         queue.add(decor);
-        int budget = 4000;
+        int budget = 20000;
         int[] loc = new int[2];
+        int limitY = statusBarHeight(act) + (int) (58 * density);
 
         while (!queue.isEmpty() && budget-- > 0) {
             View v = queue.poll();
             if (v == null || seen.put(v, Boolean.TRUE) != null) continue;
-            if (v == decor) {
-                // 跳过
-            }
+            if (v instanceof TopLayer) continue;
             if (v instanceof ViewGroup) {
                 ViewGroup g = (ViewGroup) v;
                 for (int i = 0; i < g.getChildCount(); i++) {
@@ -208,18 +252,16 @@ final class WxTopBar {
                     if (c != null && !(c instanceof TopLayer)) queue.add(c);
                 }
             }
-            if (!(v instanceof ImageView) || !v.isShown()) continue;
-            if (v.getAlpha() < 0.5f) continue;
+            if (!v.isShown() || v.getAlpha() < 0.3f) continue;
             int vw = v.getWidth();
             int vh = v.getHeight();
-            if (vw < 14 * density || vw > 64 * density) continue;
-            if (vh < 14 * density || vh > 64 * density) continue;
+            if (vw < 8 * density || vh < 8 * density) continue;
+            if (vw > 120 * density || vh > 120 * density) continue;
+            if (!looksLikeIcon(v)) continue;
             v.getLocationInWindow(loc);
             float cx = loc[0] + vw / 2f;
-            float cy = loc[1] + vh / 2f;
-            if (cx < w * 0.55f) continue;   // 只要右半边
-            if (cy > h * 0.22f) continue;   // 只要最上面那一带
-            if (v.getAlpha() < 0.2f) continue;
+            if (cx < w * 0.5f) continue;   // 只要右半边
+            if (loc[1] > limitY) continue; // 只要最上面那一带
             found.add(v);
         }
         if (found.isEmpty()) return found;
@@ -233,10 +275,24 @@ final class WxTopBar {
                 return Integer.compare(la[0], lb[0]);
             }
         });
-        // 最右边两颗就是搜索和「＋」。
-        return found.size() > 2 ? new ArrayList<View>(found.subList(found.size() - 2, found.size()))
+        // 最右边两颗就是搜索和「＋」；只有一颗的版本就包那一颗。
+        return found.size() > 2
+                ? new ArrayList<View>(found.subList(found.size() - 2, found.size()))
                 : found;
     }
+
+    /** 像不像一颗标题栏图标：本身是 ImageView，或者能点、或者带着自己的背景。 */
+    private static boolean looksLikeIcon(View v) {
+        try {
+            if (v instanceof ImageView) return true;
+            if (v.isClickable()) return true;
+            if (v.getBackground() != null && v.getWidth() <= (int) (96 * v.getResources()
+                    .getDisplayMetrics().density)) return true;
+        } catch (Throwable ignored) {
+        }
+        return false;
+    }
+
 
     // ------------------------------------------------------------ 覆盖层
 
@@ -248,8 +304,26 @@ final class WxTopBar {
         private final View[] natives = new View[2];
         private final Rect scrimBounds = new Rect();
         private final Paint scrim = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final RectF scrimDst = new RectF();
+        private final Paint topPaint = new Paint(Paint.FILTER_BITMAP_FLAG | Paint.DITHER_FLAG);
+        private View contentRoot;
+        private Bitmap topSample;
+        private boolean active;
         private Activity host;
         private boolean dark;
+
+        /** 顶栏那条模糊的刷新节奏：只抓窄窄一条，300ms 一次足够。 */
+        private final Runnable topCapture = new Runnable() {
+            @Override
+            public void run() {
+                if (!active) return;
+                try {
+                    grabTop();
+                } catch (Throwable ignored) {
+                }
+                postDelayed(this, 300L);
+            }
+        };
 
         TopLayer(android.content.Context context) {
             super(context);
@@ -276,6 +350,43 @@ final class WxTopBar {
             }
         }
 
+        /** 把顶栏那一条按低分辨率画进一张位图，再套一层竖直 alpha 渐变。 */
+        private void grabTop() {
+            View root = contentRoot;
+            if (root == null || root.getWidth() <= 0 || root.getHeight() <= 0) return;
+            int bandH = Math.min(root.getHeight(),
+                    Math.max(dp(110), scrimBounds.height() + dp(14)));
+            if (bandH <= 2) return;
+            float scale = Math.max(1f / 16f,
+                    Math.min(1f / 4f, 130f / Math.max(1, root.getWidth())));
+            int w = Math.max(8, (int) (root.getWidth() * scale));
+            int h = Math.max(4, (int) (bandH * scale));
+            Bitmap bmp = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888);
+            try {
+                Canvas c = new Canvas(bmp);
+                c.scale(scale, scale);
+                c.clipRect(0, 0, root.getWidth(), bandH);
+                root.draw(c);
+
+                Paint mask = new Paint(Paint.ANTI_ALIAS_FLAG);
+                mask.setShader(new LinearGradient(0, 0, 0, bandH,
+                        new int[]{0xFFFFFFFF, 0xF2FFFFFF, 0x66FFFFFF, 0x00FFFFFF},
+                        new float[]{0f, 0.42f, 0.78f, 1f}, Shader.TileMode.CLAMP));
+                mask.setXfermode(new android.graphics.PorterDuffXfermode(
+                        android.graphics.PorterDuff.Mode.DST_IN));
+                Canvas mc = new Canvas(bmp);
+                mc.scale(scale, scale);
+                mc.drawRect(0, 0, root.getWidth(), bandH, mask);
+            } catch (Throwable t) {
+                bmp.recycle();
+                return;
+            }
+            Bitmap old = topSample;
+            topSample = bmp;
+            if (old != null && old != bmp) old.recycle();
+            postInvalidateOnAnimation();
+        }
+
         void bind(Activity act, boolean isDark, Rect capsuleInWindow, List<View> icons,
                   Rect unionInWindow) {
             host = act;
@@ -284,10 +395,21 @@ final class WxTopBar {
             glass.bind(act, capsuleInWindow);
             glass.setDark(isDark);
 
+            View content = act.findViewById(android.R.id.content);
+            if (content != contentRoot) {
+                contentRoot = content;
+                if (topSample != null) {
+                    topSample.recycle();
+                    topSample = null;
+                }
+            }
+
             int[] self = new int[2];
             getLocationInWindow(self);
-            scrimBounds.set(0, 0, getWidth(),
-                    Math.max(0, capsuleInWindow.bottom - self[1] + dp(10)));
+            // 渐变模糊带：从屏幕顶端一直铺到胶囊下沿再往外散一点。
+            int bandBottom = Math.max(capsuleInWindow.bottom - self[1] + dp(16),
+                    statusBarHeight(act) + dp(64));
+            scrimBounds.set(0, 0, getWidth(), Math.max(0, bandBottom));
             invalidate();
 
             for (int i = 0; i < 2; i++) {
@@ -361,14 +483,24 @@ final class WxTopBar {
             }
         }
 
-        void setActive(boolean active) {
-            glass.setActive(active);
+        void setActive(boolean value) {
+            active = value;
+            glass.setActive(value);
+            removeCallbacks(topCapture);
+            if (value) {
+                post(topCapture);
+            }
         }
 
         void releaseAll() {
             setActive(false);
             releaseNatives();
             glass.release();
+            if (topSample != null) {
+                topSample.recycle();
+                topSample = null;
+            }
+            contentRoot = null;
             host = null;
         }
 
@@ -404,11 +536,18 @@ final class WxTopBar {
 
         @Override
         protected void onDraw(Canvas canvas) {
-            // 顶栏透明渐变：只铺最上面那一条，往下淡出，内容从状态栏下面透上来。
+            // 顶栏渐变模糊：把背后那一条画面以低分辨率铺上来（放大本身就是模糊），
+            // 再用 alpha 渐变让它从上往下自然淡出。
             if (scrimBounds.height() > 0) {
+                if (topSample != null && !topSample.isRecycled()) {
+                    scrimDst.set(0, 0, getWidth(),
+                            Math.min(getHeight(), scrimBounds.height() + dp(10)));
+                    canvas.drawBitmap(topSample, null, scrimDst, topPaint);
+                }
+                // 再压一层很淡的雾，纯白 / 纯黑背景上也有层次，但不会糊住标题。
                 scrim.setShader(new LinearGradient(0, 0, 0, scrimBounds.height(),
-                        dark ? new int[]{0x59000000, 0x26000000, 0x00000000}
-                                : new int[]{0x5CFFFFFF, 0x24FFFFFF, 0x00FFFFFF},
+                        dark ? new int[]{0x33000000, 0x14000000, 0x00000000}
+                                : new int[]{0x2EFFFFFF, 0x12FFFFFF, 0x00FFFFFF},
                         new float[]{0f, 0.55f, 1f}, Shader.TileMode.CLAMP));
                 canvas.drawRect(0, 0, getWidth(), scrimBounds.height(), scrim);
                 scrim.setShader(null);

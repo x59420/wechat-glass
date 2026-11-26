@@ -18,6 +18,20 @@
             微信里那行要是被版本改动顶掉了，图标这个入口一定还在。
         -->
 
+        <!--
+            日志接收端：微信进程里的模块把运行日志用**显式广播**发到这里，
+            落盘到模块自己的 files/host.log，设置页才能看 / 导出 / 清空。
+            之前只在代码里写了 BroadcastReceiver，清单没注册 —— 广播发出去没人接，
+            所以日志页永远是空的。
+        -->
+        <receiver
+            android:name=".LogReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="com.zaka.wechatglass.LOG" />
+            </intent-filter>
+        </receiver>
+
         <meta-data android:name="xposedmodule" android:value="true" />
         <meta-data android:name="xposeddescription"
             android:value="wxglass —— 只把微信底部导航栏换成液态玻璃 Dock，交互仍走微信原生。" />

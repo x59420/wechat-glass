@@ -38,6 +38,7 @@ public final class LogBus {
     private static volatile boolean scheduled;
     private static volatile Context app;
     private static volatile boolean disabled;
+    private static volatile int failures;
 
     private LogBus() {
     }
@@ -92,8 +93,12 @@ public final class LogBus {
             intent.putExtra(EXTRA_LINES, sb.toString());
             ctx.sendBroadcast(intent);
         } catch (Throwable t) {
-            // 宿主限制广播就安静关掉，别每 1.2 秒再撞一次。
-            disabled = true;
+            // 失败不永久关掉：旧版模块进程没注册接收器时这里会失败，
+            // 一旦永久关闭，用户升级模块后也永远收不到日志了。宁可下一轮再试。
+            failures++;
+            if (failures == 3) {
+                WechatGlass.warn("日志广播送不出去（接收端可能没注册）：" + t);
+            }
         }
     }
 

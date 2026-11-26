@@ -76,6 +76,44 @@ final class WxDockController {
      */
     private static volatile Activity TOP;
 
+    /**
+     * 系统自己记的「当前前台是哪个页面」。
+     *
+     * 上一版只靠我们自己记的 TOP 判断，而 TOP 依赖生命周期回调 / onResume 钩子 ——
+     * 微信一旦在哪条路上没调 super，或者回调比转场晚一拍，聊天页、添加朋友页压上来时
+     * Dock 就还挂在首页上不动。这里直接读 ActivityThread 里的 mResumedActivity，
+     * 它由系统在转场时写入，跟微信怎么写自己的生命周期完全无关。
+     */
+    private static volatile java.lang.reflect.Field RESUMED_FIELD;
+
+    /** 读不到（字段改名 / 隐藏 API 限制）时返回 null，由调用方退回 TOP 判断。 */
+    static Activity resumedActivity() {
+        try {
+            Class<?> at = Class.forName("android.app.ActivityThread");
+            Object thread = at.getMethod("currentActivityThread").invoke(null);
+            if (thread == null) return null;
+            java.lang.reflect.Field f = RESUMED_FIELD;
+            if (f == null) {
+                java.lang.reflect.Field found = null;
+                Class<?> c = at;
+                while (c != null && found == null) {
+                    try {
+                        found = c.getDeclaredField("mResumedActivity");
+                    } catch (NoSuchFieldException ignored) {
+                        c = c.getSuperclass();
+                    }
+                }
+                if (found == null) return null;
+                found.setAccessible(true);
+                RESUMED_FIELD = f = found;
+            }
+            Object value = f.get(thread);
+            return value instanceof Activity ? (Activity) value : null;
+        } catch (Throwable t) {
+            return null;
+        }
+    }
+
     /** 最近一次 resume 的时间：用来给「刚进页面、焦点还没给过来」留一点宽限。 */
     private static final WeakHashMap<Activity, Long> RESUMED_AT = new WeakHashMap<Activity, Long>();
     /** 首页上又叠了一层自己的面板（「＋」菜单）时，Dock 先收起来。 */
@@ -168,7 +206,14 @@ final class WxDockController {
 
     static void onAnyPause(Activity act) {
         if (act == null) return;
-        if (TOP == act) TOP = null;
+        // 故意不清空 TOP：清空之后「有没有别的页面压在上面」就变成未知，
+        // 轮询里会被判成"没人盖住"而把 Dock 又显示出来。保留最后一个前台页面更安全。
+        if (isHost(act)) hideNow(act);
+    }
+
+    /** 页面要走了（onPause / onStop），立刻收起，不等轮询。 */
+    static void onAnyStop(Activity act) {
+        if (act == null) return;
         if (isHost(act)) hideNow(act);
     }
 
@@ -179,7 +224,10 @@ final class WxDockController {
         synchronized (OVERLAYS) { iso = OVERLAYS.get(act); }
         if (iso == null) return;
         try {
-            animate(iso.view(), false);
+            View v = iso.view();
+            v.animate().cancel();
+            v.setAlpha(0f);
+            v.setVisibility(View.GONE);
         } catch (Throwable ignored) {
         }
     }
@@ -445,7 +493,12 @@ final class WxDockController {
 
                     // 原生底栏还在、还有实体，就显示；不然收起来。
                     // 前台必须是首页：聊天页 / 添加朋友页 / 扫一扫压上来时一律收起。
-                    Activity top = TOP;
+                    //
+                    // 两路判断叠一起，谁先拿到算谁：
+                    //   1) 系统记的 mResumedActivity（最准，和微信怎么写生命周期无关）；
+                    //   2) 我们自己记的 TOP（读不到上面那个字段时兜底）。
+                    Activity resumed = resumedActivity();
+                    Activity top = resumed != null ? resumed : TOP;
                     boolean otherOnTop = top != null && top != act
                             && !top.isFinishing() && !top.isDestroyed();
                     boolean active = !otherOnTop;
@@ -456,16 +509,20 @@ final class WxDockController {
                     }
                     Boolean focusFlag;
                     synchronized (FOCUSED) { focusFlag = FOCUSED.get(act); }
-                    boolean focused = act.hasWindowFocus()
-                            || (focusFlag == null);
                     long resumedAt;
                     synchronized (RESUMED_AT) {
                         Long value = RESUMED_AT.get(act);
                         resumedAt = value == null ? 0L : value;
                     }
                     boolean justResumed = SystemClock.uptimeMillis() - resumedAt < 900L;
+                    // 焦点只看真实状态：以前 focusFlag 为空就当"有焦点"，导致页面被盖住
+                    // 之后仍然算前台，Dock 死活不收。现在没焦点就是没焦点。
+                    boolean focused = act.hasWindowFocus()
+                            || Boolean.TRUE.equals(focusFlag);
                     boolean front = !covered && (focused || justResumed);
-                    boolean wantShow = active && front
+                    // 窗口本身不可见（被别的页面完全盖住）时也不用画。
+                    boolean windowVisible = iso.view().getWindowVisibility() == View.VISIBLE;
+                    boolean wantShow = active && front && windowVisible
                             && currentBar != null
                             && currentBar.isAttachedToWindow()
                             && currentBar.getVisibility() == View.VISIBLE
@@ -476,13 +533,16 @@ final class WxDockController {
                     // 从聊天页回来时玻璃层可能已经被上一步设成 GONE，只看布尔位就不会再显示。
                     boolean visible = iso.view().getVisibility() == View.VISIBLE
                             && iso.view().getAlpha() > 0.5f;
-                    if (wantShow && !visible) {
-                        shown[0] = true;
-                        animate(iso.view(), true);
+                    if (wantShow) {
+                        if (!visible) {
+                            shown[0] = true;
+                            animate(iso.view(), true);
+                        }
+                        // 每一轮都确认一次原生底栏是藏着的：微信自己会时不时把 alpha 还原。
                         if (!SelfMask.masked(currentBar)) SelfMask.mask(currentBar);
-                    } else if (!wantShow && visible) {
+                    } else if (visible || iso.view().getVisibility() == View.VISIBLE) {
                         shown[0] = false;
-                        animate(iso.view(), false);
+                        hideNow(act);
                     }
                     backdrop.setActive(wantShow);
 

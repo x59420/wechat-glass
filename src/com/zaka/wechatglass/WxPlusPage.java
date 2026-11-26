@@ -439,7 +439,7 @@ final class WxPlusPage {
         }
     }
 
-    private static void openSettings(View from) {
+    static void openSettings(View from) {
         Context ctx = from.getContext();
         Activity act = activityOf(ctx);
         if (act != null && SettingsActivity.open(act)) return;
@@ -466,6 +466,9 @@ final class WxPlusPage {
 
     // ------------------------------------------------------------ 弹层玻璃
 
+    private static final WeakHashMap<View, int[]> POPUP_PADDING = new WeakHashMap<View, int[]>();
+    private static final WeakHashMap<ViewGroup, View> POPUP_ROW = new WeakHashMap<ViewGroup, View>();
+
     private static void stylePopup(final PopupWindow pw) {
         if (pw == null) return;
         final View content;
@@ -484,16 +487,23 @@ final class WxPlusPage {
                     float density = ctx.getResources().getDisplayMetrics().density;
                     boolean dark = isDark(ctx);
 
-                    synchronized (STYLED) {
-                        if (STYLED.get(content) != null) return;
-                        STYLED.put(content, Boolean.TRUE);
-                    }
-
+                    // 注意：这里**不能**做"处理过一次就跳过"的缓存。
+                    // 微信每次弹面板都会把自己的背景重新设回去，跳过第二遍的结果就是
+                    // 「第一次是玻璃，后面又变回原生」。每次 show 都重新套一遍。
                     if (content instanceof ViewGroup) {
+                        ViewGroup group = (ViewGroup) content;
+                        int[] orig = POPUP_PADDING.get(content);
+                        if (orig == null) {
+                            orig = new int[]{group.getPaddingLeft(), group.getPaddingTop(),
+                                    group.getPaddingRight(), group.getPaddingBottom()};
+                            POPUP_PADDING.put(content, orig);
+                        }
                         int pad = (int) (12 * density);
-                        ((ViewGroup) content).setPadding(pad, pad, pad, pad);
+                        group.setPadding(orig[0] + pad, orig[1] + pad,
+                                orig[2] + pad, orig[3] + pad);
                     }
-                    GlassDrawable glass = new GlassDrawable(20 * density, dark);
+                    // dense = true：底色做实，文字压得住，不会再"看不清"。
+                    GlassDrawable glass = new GlassDrawable(20 * density, dark, true);
                     content.setBackground(glass);
                     try {
                         content.setElevation(12f * density);
@@ -547,6 +557,8 @@ final class WxPlusPage {
         if (content instanceof LinearLayout
                 && ((LinearLayout) content).getOrientation() == LinearLayout.VERTICAL) {
             LinearLayout list = (LinearLayout) content;
+            View old = POPUP_ROW.get(list);
+            if (old != null && old.getParent() == list) return;
             TextView row = new TextView(content.getContext());
             row.setText("  " + TITLE);
             row.setTextSize(15f);
@@ -563,6 +575,7 @@ final class WxPlusPage {
             });
             list.addView(row, new LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT, (int) (44 * density)));
+            POPUP_ROW.put(list, row);
         }
     }
 

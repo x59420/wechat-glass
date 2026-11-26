@@ -55,12 +55,14 @@ public final class WxEntry implements IXposedHookLoadPackage, IXposedHookZygoteI
 
         hookActivityCreate();
         hookActivityResume();
+        hookActivityPause();
         hookActivityDestroy();
         hookWindowFocus();
         hookApplication();
         registerToCurrentApplication();
         hookTabBarCreated(lp.classLoader);
         WxPlusPage.hook(lp.classLoader);
+        WxSettingsEntry.hook(lp.classLoader);
 
         // 装没装上，一眼就能看出来：进微信弹一条，省得再来回猜。
         WechatGlass.toast(WechatGlass.VER + " 已加载");
@@ -128,6 +130,7 @@ public final class WxEntry implements IXposedHookLoadPackage, IXposedHookZygoteI
                         if (!(self instanceof Activity)) return;
                         final Activity act = (Activity) self;
                         WxDockController.onAnyResume(act);
+                        WxSettingsEntry.maybeInstall(act);
                         View decor = act.getWindow() == null
                                 ? null : act.getWindow().getDecorView();
                         if (decor != null) {
@@ -148,8 +151,47 @@ public final class WxEntry implements IXposedHookLoadPackage, IXposedHookZygoteI
         }
     }
 
-    private static void hookActivityDestroy() {
+    /**
+     * 页面一走开就立刻收 Dock。
+     *
+     * 这一条不依赖任何回调时序：聊天页 / 添加朋友页是另一个 Activity，它们要显示出来，
+     * 首页一定先走 pause（或 stop）。哪怕系统生命周期回调没挂上、哪怕 TOP 没记上，
+     * 这一钩子也一定跑得到，Dock 一定收得掉。
+     */
+    private static void hookActivityPause() {
+        XC_MethodHook hook = new XC_MethodHook() {
+            @Override
+            protected void beforeHookedMethod(MethodHookParam param) {
+                try {
+                    Object self = param.thisObject;
+                    if (!(self instanceof Activity)) return;
+                    WxDockController.onAnyPause((Activity) self);
+                } catch (Throwable t) {
+                    WechatGlass.warnOnce("pause", "onPause 处理失败: " + t);
+                }
+            }
+        };
+        XC_MethodHook stopHook = new XC_MethodHook() {
+            @Override
+            protected void beforeHookedMethod(MethodHookParam param) {
+                try {
+                    Object self = param.thisObject;
+                    if (!(self instanceof Activity)) return;
+                    WxDockController.onAnyStop((Activity) self);
+                } catch (Throwable t) {
+                    WechatGlass.warnOnce("stop", "onStop 处理失败: " + t);
+                }
+            }
+        };
         try {
+            XposedBridge.hookAllMethods(Activity.class, "onPause", hook);
+            XposedBridge.hookAllMethods(Activity.class, "onStop", stopHook);
+        } catch (Throwable t) {
+            WechatGlass.warn("挂 Activity.onPause / onStop 失败: " + t);
+        }
+    }
+
+    private static void hookActivityDestroy() {        try {
             XposedBridge.hookAllMethods(Activity.class, "onDestroy", new XC_MethodHook() {
                 @Override
                 protected void afterHookedMethod(MethodHookParam param) {
@@ -206,6 +248,9 @@ public final class WxEntry implements IXposedHookLoadPackage, IXposedHookZygoteI
                         protected void afterHookedMethod(MethodHookParam param) {
                             try {
                                 if (!(param.thisObject instanceof View)) return;
+                                // 先让位：从微信画出底栏到我们的玻璃画出来这段时间，
+                                // 原生的那条先藏起来，别让用户看到两条栏叠在一起。
+                                SelfMask.mask((View) param.thisObject);
                                 final Activity act = activityOf((View) param.thisObject);
                                 if (act == null) return;
                                 new Handler(Looper.getMainLooper()).postDelayed(new Runnable() {
@@ -280,6 +325,7 @@ public final class WxEntry implements IXposedHookLoadPackage, IXposedHookZygoteI
                 public void onActivityResumed(Activity activity) {
                     try {
                         WxDockController.onAnyResume(activity);
+                        WxSettingsEntry.maybeInstall(activity);
                         WxPlusPage.watch(activity);
                         final Activity page = activity;
                         View decor = activity.getWindow() == null
