@@ -257,7 +257,8 @@ final class GlassCapsule extends View {
 
         // 2) 表面色：浅色上薄薄一层白，深色上压暗的夜色——这就是"材质"的底色
         surfacePaint.setShader(null);
-        surfacePaint.setColor(dark ? 0x40101216 : 0x40FFFFFF);
+        // 稍微做实一点：太透的话，背后是花色内容时图标和亮边都会糊。
+        surfacePaint.setColor(dark ? 0x66101216 : 0x70FFFFFF);
         canvas.drawRect(capsule, surfacePaint);
 
         // 3) 顶部泛光 + 底部压暗：玻璃厚度的错觉

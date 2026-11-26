@@ -501,8 +501,12 @@ final class WxPlusPage {
                         group.setPadding(orig[0] + pad, orig[1] + pad,
                                 orig[2] + pad, orig[3] + pad);
                     }
-                    // dense = true：底色做实，文字压得住，不会再"看不清"。
-                    GlassDrawable glass = new GlassDrawable(20 * density, dark, true);
+                    // dense = true：底色做实，文字压得住。
+                    // 关键：底色深浅跟着**微信自己写的文字颜色**走，而不是只看系统深色开关——
+                    // 微信自己的深色模式不一定和系统一致，跟着系统走就会出现
+                    // 「白字 + 白底」或者「黑字 + 黑底」，也就是用户说的「看不清」。
+                    boolean surfaceDark = dark || hasLightText(content, 0);
+                    GlassDrawable glass = new GlassDrawable(20 * density, surfaceDark, true);
                     content.setBackground(glass);
                     try {
                         content.setElevation(12f * density);
@@ -517,6 +521,41 @@ final class WxPlusPage {
                 }
             }
         });
+    }
+
+    /**
+     * 面板里的文字是不是浅色（白/浅灰）。
+     *
+     * 用来决定玻璃底该做实心白还是实心深灰：浅色字配深底，深色字配浅底。
+     * 比看系统 uiMode 靠谱得多 —— 微信自己的深色模式是它内部切的。
+     */
+    private static boolean hasLightText(View root, int depth) {
+        if (root == null || depth > 8) return false;
+        try {
+            if (root instanceof android.widget.TextView) {
+                android.widget.TextView tv = (android.widget.TextView) root;
+                CharSequence text = tv.getText();
+                if (text != null && text.length() > 0 && tv.getCurrentTextColor() != 0) {
+                    int color = tv.getCurrentTextColor();
+                    int alpha = (color >>> 24) & 0xFF;
+                    int r = (color >> 16) & 0xFF;
+                    int g = (color >> 8) & 0xFF;
+                    int b = color & 0xFF;
+                    if (alpha > 0x40) {
+                        float lum = (0.299f * r + 0.587f * g + 0.114f * b) / 255f;
+                        return lum > 0.6f;
+                    }
+                }
+            }
+            if (root instanceof ViewGroup) {
+                ViewGroup group = (ViewGroup) root;
+                for (int i = 0; i < group.getChildCount(); i++) {
+                    if (hasLightText(group.getChildAt(i), depth + 1)) return true;
+                }
+            }
+        } catch (Throwable ignored) {
+        }
+        return false;
     }
 
     /** 弹层的玻璃底：把弹层背后那一块截一次，塞给 Drawable，材质和 Dock 一致。 */

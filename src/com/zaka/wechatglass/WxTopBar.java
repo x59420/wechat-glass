@@ -637,8 +637,11 @@ final class WxTopBar {
                 lp.topMargin = loc[1] - self[1];
                 lp.gravity = Gravity.TOP | Gravity.START;
                 slot.setLayoutParams(lp);
-                // 图标颜色跟着微信走：原生是白色图标就保持白色，深色底别乱改色。
-                slot.setColorFilter(null);
+                // 图标必须和胶囊表面有对比：原来直接照搬原生图标的位图，
+                // 浅色胶囊上放一颗白图标 = 看不见。
+                // 现在统一染成「浅色模式深图标 / 深色模式浅图标」。
+                slot.setColorFilter(dark ? 0xFFF3F5F8 : 0xFF15171C,
+                        android.graphics.PorterDuff.Mode.SRC_IN);
             }
 
             // 玻璃画出画面了再藏原生图标（1.5 秒都没画出来就放弃，把原生还回去）。
