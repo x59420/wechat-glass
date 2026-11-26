@@ -12,15 +12,27 @@
         android:allowBackup="false">
 
         <!--
-            没有 Activity、没有桌面图标：
-            设置入口是微信「我」页面里「设置」上方那一行 wxglass（见 WxMenuEntry），
-            由微信自己的偏好列表渲染，模块不额外占用桌面。
+            设置入口两个，互相兜底：
+              1. 微信首页右上角「＋」弹出的那一页，列表最后一行（WxRowEntry）；
+              2. 桌面 / LSPosed 里的 wxglass 图标（下面这个 Activity）。
+            微信里那行要是被版本改动顶掉了，图标这个入口一定还在。
         -->
 
         <meta-data android:name="xposedmodule" android:value="true" />
         <meta-data android:name="xposeddescription"
             android:value="wxglass —— 只把微信底部导航栏换成液态玻璃 Dock，交互仍走微信原生。" />
-        <meta-data android:name="xposedminversion" android:value="93" />
+        <meta-data android:name="xposedminversion" android:value="82" />
         <meta-data android:name="xposedscope" android:value="com.tencent.mm" />
+
+        <activity
+            android:name=".SettingsActivity"
+            android:label="wxglass"
+            android:exported="true"
+            android:theme="@android:style/Theme.Material.Light.NoActionBar">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
     </application>
 </manifest>

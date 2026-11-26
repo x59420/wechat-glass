@@ -1,5 +1,6 @@
 package com.zaka.wechatglass;
 
+import android.app.Activity;
 import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.graphics.Rect;
@@ -8,6 +9,7 @@ import android.os.SystemClock;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.ViewParent;
 import android.widget.Checkable;
 import android.widget.ImageView;
 import android.widget.TextView;
@@ -34,6 +36,22 @@ final class WxTabBar {
             "com.tencent.mm.ui.LauncherUIBottomTabView",
     };
 
+    /**
+     * 底栏自身的 View id。
+     *
+     * 8.0.80(3220) 的 MainTabUI 里是 `new LauncherUIBottomTabView(ctx)` 之后
+     * `setId(0x7f0a3dd1)` 再 addView 到 contentView 的底部（gravity=BOTTOM）。
+     * 走 id 一次命中，不用在几万个节点里翻，这是最不容易失手的一条路。
+     * 前两个是历次版本里见过的编号，后面再加也只是一次 findViewById 的开销。
+     */
+    private static final int[] KNOWN_IDS = {
+            0x7f0a3dd1,
+    };
+
+    /** 遍历预算：微信首页的视图树很大，原来 4000 个节点根本不够翻到底。 */
+    private static final int WALK_BUDGET = 200000;
+    private static final int WALK_DEPTH = 80;
+
     private static final String[] DEFAULT_LABELS = {"微信", "通讯录", "发现", "我"};
 
     private static final int MIN_TABS = 3;
@@ -44,28 +62,84 @@ final class WxTabBar {
     }
 
     /** 在整棵窗口里找底栏。找不到返回 null，调用方保持微信原样。 */
-    static ViewGroup find(View root) {
-        ViewGroup named = findByName(root, 0, new int[]{4000});
+    static ViewGroup find(View root, Activity act) {
+        // 1) 按 id 直接命中（最快也最准）
+        ViewGroup byId = findById(act);
+        if (byId != null) return byId;
+
+        // 2) 按类名广度遍历（不钻死胡同，节点预算给足）
+        ViewGroup named = bfsByName(root);
         if (named != null) return named;
+
+        // 3) 最后按形状兜底
         return findByShape(root);
     }
 
-    // ------------------------------------------------------------ 按类名
-
-    private static ViewGroup findByName(View v, int depth, int[] budget) {
-        if (v == null || depth > 40 || budget[0]-- <= 0) return null;
-        if (isTabView(v)) {
-            return v instanceof ViewGroup ? (ViewGroup) v : null;
+    /** 只按 id 快速探一下，给"这是不是首页"这种每页都要问的判断用。 */
+    static boolean hasTabBar(Activity act) {
+        if (act == null) return false;
+        for (int id : KNOWN_IDS) {
+            try {
+                View v = act.findViewById(id);
+                if (v != null && isTabView(v)) return true;
+            } catch (Throwable ignored) {
+            }
         }
-        if (v instanceof ViewGroup) {
-            ViewGroup g = (ViewGroup) v;
-            for (int i = 0; i < g.getChildCount(); i++) {
-                ViewGroup found = findByName(g.getChildAt(i), depth + 1, budget);
-                if (found != null) return found;
+        return false;
+    }
+
+    private static ViewGroup findById(Activity act) {
+        if (act == null) return null;
+        for (int id : KNOWN_IDS) {
+            try {
+                View v = act.findViewById(id);
+                if (!(v instanceof ViewGroup)) continue;
+                ViewGroup g = (ViewGroup) v;
+                if (isTabView(g)) return g;
+                // id 有时候落在底栏内层的容器上，往上找一层。
+                if (looksLikeTabRow(g)) {
+                    ViewParent parent = g.getParent();
+                    if (parent instanceof ViewGroup && isTabView((View) parent)) {
+                        return (ViewGroup) parent;
+                    }
+                    return g;
+                }
+            } catch (Throwable ignored) {
             }
         }
         return null;
     }
+
+    // ------------------------------------------------------------ 按类名
+
+    /**
+     * 广度优先找 LauncherUIBottomTabView。
+     *
+     * 原来是深度优先 + 4000 节点预算：微信首页里第一个子树就可能是几千个节点，
+     * 预算在翻到主界面那条底栏之前就耗光了，结果就是「模块装了跟没装一样」。
+     * 这里改成外面套队列的广度遍历，预算放大到 20 万，深度上限 80。
+     */
+    private static ViewGroup bfsByName(View root) {
+        if (root == null) return null;
+        java.util.ArrayDeque<View> queue = new java.util.ArrayDeque<View>();
+        java.util.IdentityHashMap<View, Boolean> seen = new java.util.IdentityHashMap<View, Boolean>();
+        queue.add(root);
+        int budget = WALK_BUDGET;
+        while (!queue.isEmpty() && budget-- > 0) {
+            View v = queue.poll();
+            if (v == null || seen.put(v, Boolean.TRUE) != null) continue;
+            if (isTabView(v)) return v instanceof ViewGroup ? (ViewGroup) v : null;
+            if (v instanceof ViewGroup) {
+                ViewGroup g = (ViewGroup) v;
+                for (int i = 0; i < g.getChildCount(); i++) {
+                    View c = g.getChildAt(i);
+                    if (c != null) queue.add(c);
+                }
+            }
+        }
+        return null;
+    }
+
 
     static boolean isTabView(View v) {
         if (v == null) return false;
@@ -85,7 +159,7 @@ final class WxTabBar {
      * 整行贴在屏幕下半部分，而且每个子项都带图标或文字。
      */
     private static ViewGroup findByShape(View root) {
-        ViewGroup found = walkShape(root, 0, new int[]{3000});
+        ViewGroup found = walkShape(root, 0, new int[]{WALK_BUDGET});
         if (found != null) {
             WechatGlass.warn("底栏类名没认到，按形状命中：" + found.getClass().getName()
                     + " tabs=" + found.getChildCount());
@@ -94,7 +168,7 @@ final class WxTabBar {
     }
 
     private static ViewGroup walkShape(View v, int depth, int[] budget) {
-        if (v == null || depth > 40 || budget[0]-- <= 0) return null;
+        if (v == null || depth > WALK_DEPTH || budget[0]-- <= 0) return null;
         if (v instanceof ViewGroup && looksLikeTabRow((ViewGroup) v)) {
             return (ViewGroup) v;
         }
@@ -167,31 +241,55 @@ final class WxTabBar {
     /**
      * 底栏里的导航项。
      *
-     * 微信的底栏通常直接把 4 个导航项摆在自己身上；个别版本会再包一层横向容器，
-     * 所以先看自己，不像再看子容器。
+     * 8.0.80 的结构是 LauncherUIBottomTabView → LinearLayout(E) → 4 个 x8.d 格子，
+     * 每格 weight=1。这里从底栏往下找「3~5 个横向排开、带图标或文字」的那一层。
+     * 不要求此刻已经量到宽高——首屏刚起来时宽高还是 0，等布局完再补就行。
      */
     static List<View> items(ViewGroup tabView) {
-        List<View> direct = visibleChildren(tabView);
-        if (direct.size() >= MIN_TABS) return direct;
+        List<View> direct = children(tabView, false);
+        if (looksLikeItems(direct)) return direct;
         for (int i = 0; i < tabView.getChildCount(); i++) {
             View c = tabView.getChildAt(i);
-            if (c instanceof ViewGroup) {
-                List<View> nested = visibleChildren((ViewGroup) c);
-                if (nested.size() >= MIN_TABS) return nested;
+            if (!(c instanceof ViewGroup)) continue;
+            List<View> nested = children((ViewGroup) c, false);
+            if (looksLikeItems(nested)) return nested;
+            // 有的版本会再包一层（每格自己是一个容器）
+            for (int j = 0; j < ((ViewGroup) c).getChildCount(); j++) {
+                View d = ((ViewGroup) c).getChildAt(j);
+                if (!(d instanceof ViewGroup)) continue;
+                List<View> deeper = children((ViewGroup) d, false);
+                if (looksLikeItems(deeper)) return deeper;
             }
         }
         return direct;
     }
 
-    private static List<View> visibleChildren(ViewGroup g) {
+    private static boolean looksLikeItems(List<View> list) {
+        if (list == null || list.size() < MIN_TABS || list.size() > MAX_TABS) return false;
+        int meaningful = 0;
+        for (View v : list) {
+            if (v == null) continue;
+            if (v.isClickable() || findIcon(v, 0, 4) != null || findText(v, 0, 4).length() > 0) {
+                meaningful++;
+            }
+        }
+        return meaningful * 2 >= list.size();
+    }
+
+    private static List<View> children(ViewGroup g, boolean needSize) {
         List<View> out = new ArrayList<View>();
         for (int i = 0; i < g.getChildCount(); i++) {
             View c = g.getChildAt(i);
-            if (c.getVisibility() == View.VISIBLE && c.getWidth() > 0 && c.getHeight() > 0) {
-                out.add(c);
-            }
+            if (c == null || c.getVisibility() != View.VISIBLE) continue;
+            if (needSize && (c.getWidth() <= 0 || c.getHeight() <= 0)) continue;
+            out.add(c);
         }
         return out;
+    }
+
+    @Deprecated
+    private static List<View> visibleChildren(ViewGroup g) {
+        return children(g, true);
     }
 
     /** 导航项上的文字（微信 / 通讯录 / 发现 / 我）。 */
@@ -204,6 +302,11 @@ final class WxTabBar {
 
     static String defaultLabel(int index) {
         return index >= 0 && index < DEFAULT_LABELS.length ? DEFAULT_LABELS[index] : "";
+    }
+
+    /** 认不出格子时按几格画：微信底部一直是 4 格。 */
+    static int defaultCount() {
+        return DEFAULT_LABELS.length;
     }
 
     private static String findText(View v, int depth, int maxDepth) {
@@ -332,21 +435,42 @@ final class WxTabBar {
                 WechatGlass.warnOnce("tap-out-of-bar", "导航项坐标落在底栏之外，放弃这次转发");
                 return;
             }
-            long now = SystemClock.uptimeMillis();
-            MotionEvent down = MotionEvent.obtain(now, now,
-                    MotionEvent.ACTION_DOWN, x, y, 0);
-            MotionEvent up = MotionEvent.obtain(now, now + 48L,
-                    MotionEvent.ACTION_UP, x, y, 0);
-            down.setSource(android.view.InputDevice.SOURCE_TOUCHSCREEN);
-            up.setSource(android.view.InputDevice.SOURCE_TOUCHSCREEN);
-            tabView.dispatchTouchEvent(down);
-            tabView.dispatchTouchEvent(up);
-            down.recycle();
-            up.recycle();
+            dispatch(tabView, x, y);
             WechatGlass.log("转发导航点击 → 第 " + index + " 格 (" + (int) x + "," + (int) y + ")");
         } catch (Throwable t) {
             WechatGlass.warnOnce("tap-fail", "转发导航点击失败: " + t);
         }
+    }
+
+    /**
+     * 格子还没认出来时的兜底：底栏等宽 3~5 格，按比例算出中心点派发。
+     * 走的是底栏自己的 dispatchTouchEvent，微信那条点击链照样完整。
+     */
+    static void tapRatio(ViewGroup tabView, int index, int count) {
+        if (tabView == null || index < 0) return;
+        int n = count < MIN_TABS ? MIN_TABS : count;
+        try {
+            int w = tabView.getWidth();
+            int h = tabView.getHeight();
+            if (w <= 0 || h <= 0) return;
+            float x = w * (index + 0.5f) / n;
+            dispatch(tabView, x, h * 0.5f);
+            WechatGlass.log("按等分转发点击 → 第 " + index + " 格 /" + n);
+        } catch (Throwable t) {
+            WechatGlass.warnOnce("tap-ratio-fail", "等分转发点击失败: " + t);
+        }
+    }
+
+    private static void dispatch(ViewGroup tabView, float x, float y) {
+        long now = SystemClock.uptimeMillis();
+        MotionEvent down = MotionEvent.obtain(now, now, MotionEvent.ACTION_DOWN, x, y, 0);
+        MotionEvent up = MotionEvent.obtain(now, now + 48L, MotionEvent.ACTION_UP, x, y, 0);
+        down.setSource(android.view.InputDevice.SOURCE_TOUCHSCREEN);
+        up.setSource(android.view.InputDevice.SOURCE_TOUCHSCREEN);
+        tabView.dispatchTouchEvent(down);
+        tabView.dispatchTouchEvent(up);
+        down.recycle();
+        up.recycle();
     }
 
     /** 诊断用：把树里跟底栏有关的类名打出来。 */

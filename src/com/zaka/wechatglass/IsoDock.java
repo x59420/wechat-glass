@@ -40,7 +40,7 @@ import dalvik.system.PathClassLoader;
  * 跨加载器只传框架类型（View / Bitmap / Rect / Context）和 java.util.function 回调，
  * 这两边都能看见，不需要共享任何模块类。
  */
-final class IsoDock {
+final class IsoDock implements DockLayer {
 
     private static final String ISO_CLASS = "com.zaka.wechatglass.iso.IsoOverlay";
     private static final String OPT_DIR = "wxglass-iso";
@@ -57,6 +57,11 @@ final class IsoDock {
     private static volatile long lastFailureAt;
 
     final View view;
+
+    @Override
+    public View view() {
+        return view;
+    }
 
     private final Method setGeometryMethod;
     private final Method setBackdropMethod;
@@ -270,39 +275,47 @@ final class IsoDock {
         }
     }
 
-    void setGeometry(Rect region, Rect tabs, Rect plus) {
+    @Override
+    public void setGeometry(Rect region, Rect tabs, Rect plus) {
         invoke(setGeometryMethod, "setGeometry", region, tabs, plus);
     }
 
-    void setBackdrop(Bitmap bitmap) {
+    @Override
+    public void setBackdrop(Bitmap bitmap) {
         invoke(setBackdropMethod, "setBackdrop", bitmap);
     }
 
     /** 采样整片发黑时清掉背景图，别让玻璃变成一块黑玻璃。 */
-    void clearBackdrop() {
+    @Override
+    public void clearBackdrop() {
         invoke(clearBackdropMethod, "clearBackdrop");
     }
 
     /** 玻璃不透明度 / 隐藏玻璃背景 / 深浅模式：默认值就是原来那套外观。 */
-    void setAppearance(int alphaPercent, boolean hideBackground, int themeMode) {
+    @Override
+    public void setAppearance(int alphaPercent, boolean hideBackground, int themeMode) {
         invoke(setAppearanceMethod, "setAppearance", alphaPercent, hideBackground, themeMode);
     }
 
-    void setTabs(String[] labels, Bitmap[] icons, int selected) {
+    @Override
+    public void setTabs(String[] labels, Bitmap[] icons, int selected) {
         invoke(setTabsMethod, "setTabs", labels, icons, selected);
     }
 
-    boolean isBroken() {
+    @Override
+    public boolean isBroken() {
         Object value = invoke(isBrokenMethod, "isBroken");
         return value instanceof Boolean && (Boolean) value;
     }
 
-    boolean hasDrawn() {
+    @Override
+    public boolean hasDrawn() {
         Object value = invoke(hasDrawnMethod, "hasDrawn");
         return value instanceof Boolean && (Boolean) value;
     }
 
-    void dispose() {
+    @Override
+    public void dispose() {
         if (disposed) return;
         disposed = true;
         invoke(disposeMethod, "dispose");

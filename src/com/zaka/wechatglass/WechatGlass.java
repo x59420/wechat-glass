@@ -1,6 +1,10 @@
 package com.zaka.wechatglass;
 
+import android.content.Context;
+import android.os.Handler;
+import android.os.Looper;
 import android.util.Log;
+import android.widget.Toast;
 
 import java.util.HashSet;
 import java.util.Set;
@@ -24,7 +28,7 @@ public final class WechatGlass {
     static final String TAG = "wxglass";
 
     /** 版本号，和 build.gradle.kts 里的 versionName 一起改。 */
-    static final String VER = "0.1.1";
+    static final String VER = "0.1.3";
 
     private static volatile boolean verbose = true;
     private static final Set<String> SAID = new HashSet<String>();
@@ -59,6 +63,50 @@ public final class WechatGlass {
         try {
             Log.e(TAG, message, t);
         } catch (Throwable ignored) {
+        }
+    }
+
+    /** 弹一条提示。只在主线程上、拿得到 Context 的时候弹，任何异常都吞掉。 */
+    static void toast(final Context context, final String message) {
+        if (context == null) return;
+        try {
+            new Handler(Looper.getMainLooper()).post(new Runnable() {
+                @Override
+                public void run() {
+                    try {
+                        Toast.makeText(context.getApplicationContext(), message,
+                                Toast.LENGTH_SHORT).show();
+                    } catch (Throwable ignored) {
+                    }
+                }
+            });
+        } catch (Throwable ignored) {
+        }
+    }
+
+    /** 宿主进程里拿不到现成 Context 时用：跟系统要当前 Application。 */
+    static void toast(final String message) {
+        try {
+            Class<?> activityThread = Class.forName("android.app.ActivityThread");
+            Object app = activityThread.getMethod("currentApplication").invoke(null);
+            if (app instanceof Context) {
+                new Handler(Looper.getMainLooper()).postDelayed(new Runnable() {
+                    @Override
+                    public void run() {
+                        toast((Context) app(), message);
+                    }
+                }, 1200L);
+            }
+        } catch (Throwable ignored) {
+        }
+    }
+
+    private static Object app() {
+        try {
+            Class<?> activityThread = Class.forName("android.app.ActivityThread");
+            return activityThread.getMethod("currentApplication").invoke(null);
+        } catch (Throwable t) {
+            return null;
         }
     }
 
