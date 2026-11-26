@@ -949,7 +949,16 @@ final class WxDockController {
                 if (v instanceof android.widget.EditText && v.isShown()
                         && v.getWidth() > 0 && v.getHeight() > 0) {
                     v.getLocationInWindow(loc);
-                    if (loc[1] > screenH * 0.55f) return true;
+                    if (loc[1] > screenH * 0.55f) {
+                        CharSequence hint = ((android.widget.EditText) v).getHint();
+                        String h = hint == null ? "" : hint.toString();
+                        // 首页/搜索页也有 EditText，不能只凭“底部有输入框”就认成聊天。
+                        if (h.contains("按住") || h.contains("说话")
+                                || h.contains("转文字") || h.contains("消息")
+                                || v.hasFocus()) {
+                            return true;
+                        }
+                    }
                 }
                 if (v instanceof ViewGroup) {
                     ViewGroup g = (ViewGroup) v;
