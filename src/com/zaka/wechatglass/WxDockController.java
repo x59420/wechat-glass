@@ -170,7 +170,15 @@ final class WxDockController {
             acts = new java.util.ArrayList<Activity>(OVERLAYS.keySet());
         }
         // 不是隐藏，而是直接卸载玻璃层：聊天/添加朋友页上不可能再被轮询拉回来。
-        for (Activity a : acts) teardown(a, "非首页");
+        // teardown 会把微信原生底栏 alpha 还原；如果聊天页只是盖在首页上，
+        // 还原后的原生底栏会从底下露出来，看起来就像“Dock 没收起”。
+        // 所以卸载后再把原生底栏压回 alpha 0，等真正回首页再交给安装流程。
+        for (Activity a : acts) {
+            ViewGroup bar;
+            synchronized (BARS) { bar = BARS.get(a); }
+            teardown(a, "非首页");
+            if (bar != null) SelfMask.mask(bar);
+        }
     }
 
     static void onHostResume(final Activity act) {
@@ -311,7 +319,11 @@ final class WxDockController {
     private static boolean install(final Activity act) {
         WechatGlass.setVerbose(DockPrefs.logEnabled(act));
         if (!DockPrefs.enabled(act)) {
-            // 用户在设置里关掉了：微信原生底栏一概不碰。
+            // 用户在设置里关掉了：把之前压掉的原生底栏恢复。
+            for (Activity a : new ArrayList<Activity>(BARS.keySet())) {
+                ViewGroup b = BARS.get(a);
+                if (b != null) SelfMask.restore(b);
+            }
             return true;
         }
         final View decor = safeDecor(act);
