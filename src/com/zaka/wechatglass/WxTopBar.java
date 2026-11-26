@@ -128,7 +128,7 @@ final class WxTopBar {
             bar = parent;
             if (bar == decor) break;
         }
-        if (bar != container && !(bar instanceof ViewGroup && DONE.get(bar) != null)) {
+        if (bar != container && bar != decor && DONE.get(bar) == null) {
             DONE.put(bar, "bar");
             GradientDrawable scrim = new GradientDrawable(
                     GradientDrawable.Orientation.TOP_BOTTOM,
