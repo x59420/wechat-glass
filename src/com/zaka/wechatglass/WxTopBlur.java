@@ -26,8 +26,9 @@ final class WxTopBlur {
 
             Object ctl = bvCls.getMethod("getBlurController").invoke(bv);
             Class<?> f = Class.forName("ll5.f", false, cl);
-            Object algo = Class.forName("ll5.k", false, cl)
-                    .getConstructor(Context.class).newInstance(context);
+            Class<?> algoCls = Class.forName("ll5.k", false, cl);
+            Object algo = newAlgorithm(context, algoCls);
+            if (algo == null) throw new IllegalStateException("ll5.k 没有可用构造器");
             f.getMethod("b", Class.forName("ll5.e", false, cl)).invoke(ctl, algo);
             f.getMethod("j", Drawable.class).invoke(ctl, decor.getBackground());
             f.getMethod("h", float.class).invoke(ctl, 15f);
@@ -49,5 +50,34 @@ final class WxTopBlur {
             WechatGlass.warnOnce("topbar-blur", "顶栏 GPU 模糊不可用: " + t);
             return null;
         }
+    }
+
+    /** 微信不同版本 ll5.k 的构造器不一样，按参数表逐个试。 */
+    private static Object newAlgorithm(Context context, Class<?> cls) {
+        java.lang.reflect.Constructor<?>[] ctors = cls.getDeclaredConstructors();
+        for (java.lang.reflect.Constructor<?> c : ctors) {
+            Class<?>[] ps = c.getParameterTypes();
+            Object[] args = new Object[ps.length];
+            boolean ok = true;
+            for (int i = 0; i < ps.length; i++) {
+                Class<?> p = ps[i];
+                if (p == Context.class) args[i] = context;
+                else if (p == int.class) args[i] = 0;
+                else if (p == float.class) args[i] = 0f;
+                else if (p == boolean.class) args[i] = false;
+                else if (p == long.class) args[i] = 0L;
+                else if (!p.isPrimitive()) args[i] = null;
+                else { ok = false; break; }
+            }
+            if (!ok) continue;
+            try {
+                c.setAccessible(true);
+                Object obj = c.newInstance(args);
+                WechatGlass.log("顶栏:ll5.k 构造器 " + java.util.Arrays.toString(ps));
+                return obj;
+            } catch (Throwable ignored) {
+            }
+        }
+        return null;
     }
 }
