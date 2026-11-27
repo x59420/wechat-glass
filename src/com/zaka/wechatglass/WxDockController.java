@@ -1119,6 +1119,16 @@ final class WxDockController {
                 if (v == null || seen.put(v, Boolean.TRUE) != null) continue;
                 if (v instanceof android.widget.EditText && v.isShown()
                         && v.getWidth() > 0 && v.getHeight() > 0) {
+                    // 输入法弹出后输入框会上移，不能再只看 y 坐标；
+                    // 真正的判据是它属于聊天输入栏（父容器类名带 chat/footer）。
+                    View p = v;
+                    int guard = 0;
+                    while (p != null && guard++ < 7) {
+                        String cn = p.getClass().getName().toLowerCase(java.util.Locale.ROOT);
+                        if (cn.contains("chat") || cn.contains("footer")) return true;
+                        Object parent = p.getParent();
+                        p = parent instanceof View ? (View) parent : null;
+                    }
                     v.getLocationInWindow(loc);
                     if (loc[1] > screenH * 0.55f) {
                         CharSequence hint = ((android.widget.EditText) v).getHint();
