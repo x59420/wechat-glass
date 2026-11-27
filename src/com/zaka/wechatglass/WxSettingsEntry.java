@@ -38,6 +38,8 @@ final class WxSettingsEntry {
     private static final WeakHashMap<Activity, View> ROWS = new WeakHashMap<Activity, View>();
     private static final WeakHashMap<View, int[]> PADDING = new WeakHashMap<View, int[]>();
     private static final WeakHashMap<Activity, Boolean> TRIED = new WeakHashMap<Activity, Boolean>();
+    private static final WeakHashMap<Activity, android.view.ViewTreeObserver.OnGlobalLayoutListener> WATCHERS =
+            new WeakHashMap<Activity, android.view.ViewTreeObserver.OnGlobalLayoutListener>();
 
     private static final Handler MAIN = new Handler(Looper.getMainLooper());
 
@@ -90,10 +92,37 @@ final class WxSettingsEntry {
     /** 如果这一页是设置页，就把入口插上（多次调用安全）。 */
     static void maybeInstall(Activity act) {
         if (!isSettingsPage(act)) return;
+        watch(act);
         install(act);
     }
 
+    /** 首次进设置页列表可能还没布局，布局一变就再试一次。 */
+    private static void watch(final Activity act) {
+        synchronized (WATCHERS) {
+            if (WATCHERS.containsKey(act)) return;
+        }
+        android.view.View decor = act.getWindow() == null ? null : act.getWindow().getDecorView();
+        if (decor == null) return;
+        final android.view.ViewTreeObserver.OnGlobalLayoutListener listener =
+                new android.view.ViewTreeObserver.OnGlobalLayoutListener() {
+                    @Override
+                    public void onGlobalLayout() {
+                        try {
+                            if (act.isFinishing() || act.isDestroyed()) return;
+                            install(act);
+                        } catch (Throwable ignored) {
+                        }
+                    }
+                };
+        try {
+            decor.getViewTreeObserver().addOnGlobalLayoutListener(listener);
+            synchronized (WATCHERS) { WATCHERS.put(act, listener); }
+        } catch (Throwable ignored) {
+        }
+    }
+
     private static void schedule(final Activity act, final int attempt) {
+        watch(act);
         MAIN.postDelayed(new Runnable() {
             @Override
             public void run() {

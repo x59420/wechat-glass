@@ -447,7 +447,7 @@ internal fun SettingsScreen(
                         GlassCard(scene) {
                             TextRow(
                                 title = "恢复默认",
-                                subtitle = "",
+                                subtitle = "重置全部开关和尺寸",
                                 onClick = state::reset,
                             )
                         }
@@ -697,8 +697,7 @@ private fun ThemeModeRow(backdrop: Backdrop, themeMode: Int, onChange: (Int) -> 
     val modes = listOf("跟随系统", "浅色", "深色")
     val current = themeMode.coerceIn(0, 2)
     var open by remember { mutableStateOf(false) }
-    val offset = with(LocalDensity.current) { IntOffset(0, 8.dp.roundToPx()) }
-    val popupGapPx = with(LocalDensity.current) { 4.dp.roundToPx() }
+    val popupGapPx = with(LocalDensity.current) { 2.dp.roundToPx() }
 
     Box(Modifier.fillMaxWidth()) {
         Row(
@@ -723,30 +722,29 @@ private fun ThemeModeRow(backdrop: Backdrop, themeMode: Int, onChange: (Int) -> 
                     .padding(horizontal = 14.dp, vertical = 9.dp)
             ) {
                 Label(modes[current], palette.primary, 13.sp, weight = FontWeight.Medium)
-            }
-        }
-        if (open) {
-            Popup(
-                popupPositionProvider = object : PopupPositionProvider {
-                    override fun calculatePosition(
-                        anchorBounds: IntRect,
-                        windowSize: IntSize,
-                        layoutDirection: LayoutDirection,
-                        popupContentSize: IntSize,
-                    ): IntOffset {
-                        return IntOffset(
-                            x = anchorBounds.right - popupContentSize.width,
-                            y = (anchorBounds.top - popupContentSize.height - popupGapPx)
-                                .coerceAtLeast(0),
-                        )
+                if (open) {
+                    Popup(
+                        popupPositionProvider = object : PopupPositionProvider {
+                            override fun calculatePosition(
+                                anchorBounds: IntRect,
+                                windowSize: IntSize,
+                                layoutDirection: LayoutDirection,
+                                popupContentSize: IntSize,
+                            ): IntOffset {
+                                return IntOffset(
+                                    x = anchorBounds.right - popupContentSize.width,
+                                    y = anchorBounds.bottom + popupGapPx,
+                                )
+                            }
+                        },
+                        onDismissRequest = { open = false },
+                        properties = PopupProperties(focusable = true),
+                    ) {
+                        ThemeModeCapsule(backdrop, modes, current) { index ->
+                            onChange(index)
+                            open = false
+                        }
                     }
-                },
-                onDismissRequest = { open = false },
-                properties = PopupProperties(focusable = true),
-            ) {
-                ThemeModeCapsule(backdrop, modes, current) { index ->
-                    onChange(index)
-                    open = false
                 }
             }
         }
@@ -768,7 +766,8 @@ private fun ThemeModeCapsule(
         unfold.animateTo(1f, tween(durationMillis = 180, easing = FastOutSlowInEasing))
     }
     Column(
-        Modifier
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = Modifier
             .width(170.dp)
             .graphicsLayer {
                 // 从右上角往左下角展开
@@ -795,7 +794,8 @@ private fun ThemeModeCapsule(
                         interactionSource = remember { MutableInteractionSource() },
                         indication = null,
                     ) { onPick(index) }
-                    .padding(horizontal = 14.dp, vertical = 11.dp)
+                    .padding(horizontal = 14.dp, vertical = 11.dp),
+                contentAlignment = Alignment.Center,
             ) {
                 Label(
                     label,
