@@ -75,6 +75,7 @@ import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupPositionProvider
 import androidx.compose.ui.window.PopupProperties
+import androidx.compose.material3.DropdownMenu
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
@@ -726,10 +727,15 @@ private fun ThemeModeRow(backdrop: Backdrop, themeMode: Int, onChange: (Int) -> 
             ) {
                 Label(modes[current], palette.primary, 13.sp, weight = FontWeight.Medium)
                 if (open) {
-                    Popup(
-                        alignment = Alignment.BottomEnd,
-                        offset = IntOffset(0, popupGapPx),
+                    DropdownMenu(
+                        expanded = open,
                         onDismissRequest = { open = false },
+                        offset = androidx.compose.ui.unit.DpOffset(0.dp, 2.dp),
+                        modifier = Modifier.width(170.dp),
+                        containerColor = Color.Transparent,
+                        tonalElevation = 0.dp,
+                        shadowElevation = 0.dp,
+                        shape = RoundedCornerShape(22.dp),
                         properties = PopupProperties(focusable = true),
                     ) {
                         ThemeModeCapsule(backdrop, modes, current) { index ->

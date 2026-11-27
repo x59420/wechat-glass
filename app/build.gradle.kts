@@ -16,8 +16,8 @@ android {
         applicationId = "com.zaka.wechatglass"
         minSdk = 26
         targetSdk = 34
-        versionCode = 115
-        versionName = "0.10.3"
+        versionCode = 116
+        versionName = "0.10.4"
     }
 
     sourceSets {
@@ -80,6 +80,7 @@ dependencies {
     implementation(platform("androidx.compose:compose-bom:2026.09.00"))
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.foundation:foundation")
+    implementation("androidx.compose.material3:material3")
     implementation("androidx.compose.animation:animation")
     implementation("androidx.compose.material:material-icons-extended")
     implementation("androidx.core:core-ktx:1.17.0")
