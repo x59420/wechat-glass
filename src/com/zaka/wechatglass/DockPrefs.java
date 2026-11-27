@@ -45,8 +45,8 @@ final class DockPrefs {
     /** 默认值就是 0.4.x 一直在用的那套参数：64dp 高、单格 76dp、左右各 24dp、离底 8dp。 */
     static final int DEF_HEIGHT = 64;
     static final int DEF_TAB_WIDTH = 76;
-    static final int DEF_SIDE_MARGIN = 24;
-    static final int DEF_BOTTOM_GAP = 8;
+    static final int DEF_SIDE_MARGIN = 28;
+    static final int DEF_BOTTOM_GAP = 12;
 
     static final int MIN_HEIGHT = 52;
     static final int MAX_HEIGHT = 88;
