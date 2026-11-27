@@ -436,7 +436,8 @@ final class WxDockController {
                 return true;
             }
         }
-        if (hasChatInput(decor) || hasExplicitNonMainTitle(decor)
+        if ((!hasMainTitle(decor) && hasChatInput(decor))
+                || hasExplicitNonMainTitle(decor)
                 || (hasNonMainPageTitle(decor) && !hasMainTitle(decor))) {
             SUB_PAGE = true;
             return true;
@@ -716,7 +717,8 @@ final class WxDockController {
                     Activity top = resumed != null ? resumed : TOP;
                     boolean otherOnTop = top != null && top != act
                             && !top.isFinishing() && !top.isDestroyed();
-                    boolean chatOpen = hasChatInput(decor);
+                    boolean mainTitleNow = hasMainTitle(decor);
+                    boolean chatOpen = !mainTitleNow && hasChatInput(decor);
                     if (chatOpen) {
                         WxChatTime.attachForChat(act);
                     } else {
