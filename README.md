@@ -89,7 +89,6 @@ ANDROID_HOME=/path/to/android-sdk bash build.sh
 - [KernelSU](https://github.com/tiann/KernelSU)：悬浮底栏与液态玻璃参数
 - [compose-miuix-ui](https://github.com/miuix-kotlin-multiplatform/compose-miuix-ui)：模糊、vibrancy、lens
 - [Kyant0/AndroidLiquidGlass](https://github.com/Kyant0/AndroidLiquidGlass)：折射与高光
-- [HapeLee/JMComicX](https://github.com/HapeLee/JMComicX)：渐进模糊参考
 
 ## 许可
 
