@@ -272,15 +272,32 @@ final class WxDockController {
                                 }
                                 return;
                             }
-                            // 从聊天返回首页：输入框消失的第一帧就把 Dock 装回来，
-                            // 不再等 200ms 轮询。二级页/添加朋友不在这里恢复。
-                            if (SUB_PAGE && isOnMainTab(act, decor)
+                            // 从聊天返回首页：输入框消失后就立刻补装。
+                            // 不再要求 SUB_PAGE 一定为 true，也不再等 200ms 轮询。
+                            if (isOnMainTab(act, decor)
                                     && !isKnownSubPage(decor) && !isAddFriendPage(decor)) {
                                 SUB_PAGE = false;
                                 NON_HOST = false;
                                 synchronized (OVERLAYS) {
                                     if (!OVERLAYS.containsKey(act)) attempt(act, 0);
                                 }
+                                // 返回动画期间第一次 attempt 可能还认不到原生底栏，补两次。
+                                MAIN.postDelayed(new Runnable() {
+                                    @Override public void run() {
+                                        synchronized (OVERLAYS) {
+                                            if (!OVERLAYS.containsKey(act)
+                                                    && !hasChatInput(decor)) attempt(act, 0);
+                                        }
+                                    }
+                                }, 70L);
+                                MAIN.postDelayed(new Runnable() {
+                                    @Override public void run() {
+                                        synchronized (OVERLAYS) {
+                                            if (!OVERLAYS.containsKey(act)
+                                                    && !hasChatInput(decor)) attempt(act, 0);
+                                        }
+                                    }
+                                }, 160L);
                             }
                         } catch (Throwable ignored) {
                         }
