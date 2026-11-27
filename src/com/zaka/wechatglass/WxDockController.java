@@ -422,6 +422,12 @@ final class WxDockController {
         }
         if (isAddFriendPage(decor)) {
             SUB_PAGE = true;
+            // 添加朋友页本来就不该有底栏；把原生底栏压回去，别让它露出来。
+            try {
+                ViewGroup b = WxTabBar.find((ViewGroup) decor, act);
+                if (b != null) SelfMask.mask(b);
+            } catch (Throwable ignored) {
+            }
             return true;
         }
         final View content = act.findViewById(android.R.id.content);
