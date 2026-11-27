@@ -469,109 +469,12 @@ final class WxPlusPage {
     private static final WeakHashMap<View, int[]> POPUP_PADDING = new WeakHashMap<View, int[]>();
     private static final WeakHashMap<ViewGroup, View> POPUP_ROW = new WeakHashMap<ViewGroup, View>();
 
-    /** 微信 8.0.80 的「＋」菜单不是 PopupWindow，而是 decor 里的面板 ViewGroup。 */
+    /** 微信 8.0.80 的「＋」菜单不是 PopupWindow，而是 decor 里的面板 ViewGroup。
+     *  已取消＋菜单玻璃，保持原生。 */
     private static void stylePanel(ViewGroup panel) {
-        if (panel == null) return;
-        try {
-            if (Boolean.TRUE.equals(STYLED.get(panel))) return;
-            Context ctx = panel.getContext();
-            float density = ctx.getResources().getDisplayMetrics().density;
-            boolean dark = isDark(ctx) || hasLightText(panel, 0);
-            GlassDrawable glass = new GlassDrawable(20 * density, dark, true);
-            panel.setBackground(glass);
-            panel.setClipToOutline(true);
-            panel.setElevation(10 * density);
-            attachPopupBackdrop(panel, glass);
-            STYLED.put(panel, Boolean.TRUE);
-            WechatGlass.log("入口:菜单面板已换玻璃底 " + panel.getClass().getName());
-        } catch (Throwable t) {
-            WechatGlass.warnOnce("plus-panel", "菜单玻璃底失败: " + t);
-        }
     }
 
     private static void stylePopup(final PopupWindow pw) {
-        if (pw == null) return;
-        final View content;
-        try {
-            content = pw.getContentView();
-        } catch (Throwable t) {
-            return;
-        }
-        if (content == null) return;
-        content.post(new Runnable() {
-            @Override
-            public void run() {
-                try {
-                    if (!content.isAttachedToWindow()) return;
-                    Context ctx = content.getContext();
-                    float density = ctx.getResources().getDisplayMetrics().density;
-                    boolean dark = isDark(ctx);
-
-                    // 注意：这里**不能**做"处理过一次就跳过"的缓存。
-                    // 微信每次弹面板都会把自己的背景重新设回去，跳过第二遍的结果就是
-                    // 「第一次是玻璃，后面又变回原生」。每次 show 都重新套一遍。
-                    if (content instanceof ViewGroup) {
-                        ViewGroup group = (ViewGroup) content;
-                        int[] orig = POPUP_PADDING.get(content);
-                        if (orig == null) {
-                            orig = new int[]{group.getPaddingLeft(), group.getPaddingTop(),
-                                    group.getPaddingRight(), group.getPaddingBottom()};
-                            POPUP_PADDING.put(content, orig);
-                        }
-                        // 只加纵向留白，不要横向再撑一圈：
-                        // 横向 padding 会把原本刚好放得下的菜单文字挤到换行。
-                        int pad = (int) (8 * density);
-                        // 上面不再额外加留白：用户反馈弹层顶部空太多。
-                        // 只补底部一点，文字整体往上收。
-                        int top = Math.max(0, orig[1] - (int) (2 * density));
-                        group.setPadding(orig[0], top,
-                                orig[2], orig[3] + pad);
-                        group.setClipToPadding(false);
-                    }
-                    // dense = true：底色做实，文字压得住。
-                    // 关键：底色深浅跟着**微信自己写的文字颜色**走，而不是只看系统深色开关——
-                    // 微信自己的深色模式不一定和系统一致，跟着系统走就会出现
-                    // 「白字 + 白底」或者「黑字 + 黑底」，也就是用户说的「看不清」。
-                    boolean surfaceDark = dark || hasLightText(content, 0);
-                    GlassDrawable glass = new GlassDrawable(20 * density, surfaceDark, true);
-                    content.setBackground(glass);
-                    attachPopupBackdrop(content, glass);
-                    // 菜单本身内容不多，固定高度即可，不要出现滚动条。
-                    content.setVerticalScrollBarEnabled(false);
-                    content.setOverScrollMode(View.OVER_SCROLL_NEVER);
-                    if (content instanceof android.widget.ScrollView) {
-                        ((android.widget.ScrollView) content).setFillViewport(true);
-                    }
-                    try {
-                        content.setElevation(12f * density);
-                    } catch (Throwable ignored) {
-                    }
-                    // 不做 PixelCopy 背景映射：弹层坐标和窗口裁剪在不同微信版本上经常对不上，
-                    // 映射出来的画面会错位。这里直接用纯色玻璃底。
-                    if (content instanceof ViewGroup) {
-                        injectPopupRow((ViewGroup) content, dark, density);
-                    }
-                    // 让弹层按内容实际高度展开，不再出现内部滚动。
-                    try {
-                        int width = pw.getWidth() > 0 ? pw.getWidth() : content.getWidth();
-                        content.measure(
-                                android.view.View.MeasureSpec.makeMeasureSpec(
-                                        Math.max(1, width),
-                                        android.view.View.MeasureSpec.AT_MOST),
-                                android.view.View.MeasureSpec.makeMeasureSpec(
-                                        0, android.view.View.MeasureSpec.UNSPECIFIED));
-                        int desired = content.getMeasuredHeight();
-                        if (desired > 0 && desired != pw.getHeight()) {
-                            pw.setHeight(desired);
-                            pw.update();
-                        }
-                    } catch (Throwable ignored) {
-                    }
-                } catch (Throwable t) {
-                    WechatGlass.warnOnce("popup-style", "弹层玻璃处理失败: " + t);
-                }
-            }
-        });
     }
 
     /**

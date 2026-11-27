@@ -377,7 +377,7 @@ internal fun SettingsScreen(
                 Spacer(Modifier.height(14.dp))
 
                 SettingsTabBar(
-                    tabs = listOf("开关", "尺寸", "外观", "日志"),
+                    tabs = listOf("开关", "尺寸", "外观", "其它"),
                     selected = tab,
                     onSelect = { tab = it },
                 )
@@ -425,7 +425,7 @@ internal fun SettingsScreen(
                             Divider()
                             SwitchRow(
                                 title = "记录日志",
-                                subtitle = "关键步骤写进日志，可以在「日志」页导出",
+                                subtitle = "关键步骤写进日志，可以在「其它」页导出",
                                 checked = state.logEnabled.value,
                                 onChange = state::setLogEnabled,
                             )
@@ -565,8 +565,7 @@ internal fun SettingsScreen(
                 )
                 Spacer(Modifier.height(10.dp))
                 Label(
-                    text = "液态玻璃渲染移植自 KernelSU（Compose + Miuix），折射与色散参数与上游一致；"
-                        + "模糊采样由 compose-miuix-ui 提供。本模块与微信官方无关，仅限个人非商业用途。",
+                    text = "本模块与微信官方无关，仅限个人非商业用途。",
                     color = LocalSettingsPalette.current.secondary.copy(alpha = 0.75f),
                     size = 11.sp,
                     modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp),
@@ -726,7 +725,7 @@ private fun ThemeModeRow(backdrop: Backdrop, themeMode: Int, onChange: (Int) -> 
     val current = themeMode.coerceIn(0, 2)
     var open by remember { mutableStateOf(false) }
     val offset = with(LocalDensity.current) { IntOffset(0, 8.dp.roundToPx()) }
-    val popupGapPx = with(LocalDensity.current) { 2.dp.roundToPx() }
+    val popupGapPx = 0
 
     Box(Modifier.fillMaxWidth()) {
         Row(
@@ -1088,15 +1087,16 @@ private object UpdateChecker {
     fun latest(): Release? {
         return try {
             val conn = java.net.URL(
-                "https://api.github.com/repos/x59420/wechat-glass/releases/latest"
+                "https://github.com/x59420/wechat-glass/releases/latest"
             ).openConnection() as java.net.HttpURLConnection
             conn.connectTimeout = 8000
             conn.readTimeout = 8000
-            conn.setRequestProperty("Accept", "application/vnd.github+json")
+            conn.instanceFollowRedirects = true
             conn.setRequestProperty("User-Agent", "wxglass-updater")
-            val text = conn.inputStream.bufferedReader().use { it.readText() }
-            val obj = org.json.JSONObject(text)
-            Release(obj.optString("tag_name"), obj.optString("html_url"))
+            conn.inputStream.close()
+            val finalUrl = conn.url.toString()
+            val tag = finalUrl.substringAfterLast('/')
+            if (tag.isBlank()) null else Release(tag, finalUrl)
         } catch (t: Throwable) {
             null
         }

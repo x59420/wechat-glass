@@ -16,8 +16,8 @@ android {
         applicationId = "com.zaka.wechatglass"
         minSdk = 26
         targetSdk = 34
-        versionCode = 101
-        versionName = "0.8.55-test"
+        versionCode = 102
+        versionName = "0.9.0"
     }
 
     sourceSets {
@@ -55,8 +55,8 @@ android {
         release {
             // 剪掉没用到的代码/资源来压体积；类名不混淆（-dontobfuscate），
             // 保证 LSPosed 按 assets/xposed_init 里的全名加载入口类不出问题。
-            isMinifyEnabled = false
-            isShrinkResources = false
+            isMinifyEnabled = true
+            isShrinkResources = true
             // 必须显式声明，否则 R8 读不到 keep 规则，会把模块自己的类也裁光。
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),

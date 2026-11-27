@@ -1374,7 +1374,10 @@ final class WxDockController {
         if (iso == null || bandRect == null) return;
         try {
             // 透明度 / 隐藏玻璃这两项已经从设置里去掉：材质固定成默认那一档。
-            iso.setAppearance(100, false, DockPrefs.themeMode(act));
+            int night = act.getResources().getConfiguration().uiMode
+                    & android.content.res.Configuration.UI_MODE_NIGHT_MASK;
+            boolean wechatDark = night == android.content.res.Configuration.UI_MODE_NIGHT_YES;
+            iso.setAppearance(100, false, wechatDark ? 2 : 1);
 
             int[] overlayLoc = new int[2];
             iso.view().getLocationInWindow(overlayLoc);
