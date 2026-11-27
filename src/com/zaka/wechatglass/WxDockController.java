@@ -419,15 +419,20 @@ final class WxDockController {
             SUB_PAGE = false;
             NON_HOST = false;
         }
-        if (isAddFriendPage(decor)) {
+        boolean knownSub = isKnownSubPage(decor) || isAddFriendPage(decor);
+        if (knownSub) {
             SUB_PAGE = true;
-            // 添加朋友页本来就不该有底栏；把原生底栏压回去，别让它露出来。
             try {
                 ViewGroup b = WxTabBar.find((ViewGroup) decor, act);
                 if (b != null) SelfMask.mask(b);
             } catch (Throwable ignored) {
             }
             return true;
+        }
+        // 明确不是二级页后，四主 tab 才允许清掉旧 SUB_PAGE。
+        if (isOnMainTab(act, decor) && !hasChatInput(decor)) {
+            SUB_PAGE = false;
+            NON_HOST = false;
         }
         final View content = act.findViewById(android.R.id.content);
         if (!(decor instanceof ViewGroup) || content == null) return false;
@@ -751,13 +756,13 @@ final class WxDockController {
                     } else if (nonMain) {
                         SUB_PAGE = true;
                     }
-                    boolean addFriendNow = isAddFriendPage(decor);
-                    if (addFriendNow) {
+                    boolean knownSubNow = isKnownSubPage(decor) || isAddFriendPage(decor);
+                    boolean mainTab = isOnMainTab(act, decor);
+                    if (knownSubNow) {
                         chatOpen = false;
                         explicitSub = true;
                         SUB_PAGE = true;
-                    }
-                    if (!addFriendNow && isContactsPage(decor)) {
+                    } else if (isContactsPage(decor) || (mainTab && !chatOpen)) {
                         chatOpen = false;
                         SUB_PAGE = false;
                         NON_HOST = false;
@@ -1100,6 +1105,52 @@ final class WxDockController {
      * 胶囊按设置的高度 / 单格宽度算，整组按屏幕宽度居中，底部离手势条留间距。
      * 微信没有「＋」，所以 plusRect 给空矩形，渲染层自然不画那个圆球。
      */
+    /** 顶部标题明确是二级页：微信运动/团队/支付/添加朋友等。 */
+    private static boolean isKnownSubPage(View decor) {
+        if (!(decor instanceof ViewGroup)) return false;
+        try {
+            java.util.ArrayDeque<View> q = new java.util.ArrayDeque<View>();
+            java.util.IdentityHashMap<View, Boolean> seen = new java.util.IdentityHashMap<View, Boolean>();
+            q.add(decor);
+            int[] loc = new int[2];
+            int status = 0;
+            if (decor.getContext() instanceof Activity) {
+                Activity a = (Activity) decor.getContext();
+                if (a.getWindow() != null && a.getWindow().getDecorView().getRootWindowInsets() != null) {
+                    status = a.getWindow().getDecorView().getRootWindowInsets()
+                            .getInsets(android.view.WindowInsets.Type.statusBars()).top;
+                }
+            }
+            int limit = status + (int) (64 * decor.getResources().getDisplayMetrics().density);
+            int budget = 8000;
+            while (!q.isEmpty() && budget-- > 0) {
+                View v = q.poll();
+                if (v == null || seen.put(v, Boolean.TRUE) != null) continue;
+                if (v instanceof android.widget.TextView && v.isShown()) {
+                    v.getLocationInWindow(loc);
+                    if (loc[1] < limit) {
+                        String t = ((android.widget.TextView) v).getText() == null ? ""
+                                : ((android.widget.TextView) v).getText().toString().trim();
+                        if (t.equals("微信运动") || t.equals("微信团队")
+                                || t.equals("微信支付") || t.equals("添加朋友")
+                                || t.equals("发起群聊") || t.equals("选择联系人")) {
+                            return true;
+                        }
+                    }
+                }
+                if (v instanceof ViewGroup) {
+                    ViewGroup g = (ViewGroup) v;
+                    for (int i = 0; i < g.getChildCount(); i++) {
+                        View c = g.getChildAt(i);
+                        if (c != null && !c.getClass().getName().startsWith(WechatGlass.PKG)) q.add(c);
+                    }
+                }
+            }
+        } catch (Throwable ignored) {
+        }
+        return false;
+    }
+
     /** 添加朋友页是 LauncherUI 里的 Fragment，底栏选中项仍是微信，不能只看 tab。 */
     private static boolean isAddFriendPage(View decor) {
         if (!(decor instanceof ViewGroup)) return false;
