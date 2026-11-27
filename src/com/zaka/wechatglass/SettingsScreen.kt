@@ -250,6 +250,13 @@ internal class SettingsState(context: Context) : SettingsModel {
         setEnabled(true)
         setShowPlus(true)
         setShowLabels(true)
+        setLogEnabled(true)
+        setHideDesktop(false)
+        setThemeMode(0)
+        setGlassAlpha(100)
+        setHideBackground(false)
+        setBottomTransparent(true)
+        setVideoTint(true)
         setHeight(DockPrefs.DEF_HEIGHT)
         setTabWidth(DockPrefs.DEF_TAB_WIDTH)
         setSideMargin(DockPrefs.DEF_SIDE_MARGIN)
@@ -348,6 +355,7 @@ internal fun SettingsScreen(
             } else Modifier.fillMaxSize()
             Column(
                 panel
+                    .layerBackdrop(scene)
                     .verticalScroll(rememberScrollState())
                     .then(
                         if (overlay) Modifier
@@ -438,8 +446,8 @@ internal fun SettingsScreen(
                         Spacer(Modifier.height(16.dp))
                         GlassCard(scene) {
                             TextRow(
-                                title = "恢复默认尺寸",
-                                subtitle = "只重置尺寸和开关，不动别的",
+                                title = "恢复默认",
+                                subtitle = "",
                                 onClick = state::reset,
                             )
                         }
@@ -690,7 +698,7 @@ private fun ThemeModeRow(backdrop: Backdrop, themeMode: Int, onChange: (Int) -> 
     val current = themeMode.coerceIn(0, 2)
     var open by remember { mutableStateOf(false) }
     val offset = with(LocalDensity.current) { IntOffset(0, 8.dp.roundToPx()) }
-    val popupGapPx = 0
+    val popupGapPx = with(LocalDensity.current) { 4.dp.roundToPx() }
 
     Box(Modifier.fillMaxWidth()) {
         Row(
@@ -705,8 +713,6 @@ private fun ThemeModeRow(backdrop: Backdrop, themeMode: Int, onChange: (Int) -> 
         ) {
             Column(Modifier.weight(1f)) {
                 Label("主题", palette.primary, 15.sp)
-                Spacer(Modifier.height(3.dp))
-                Label("玻璃和这个设置页都跟着它", palette.secondary, 11.5.sp)
             }
             Spacer(Modifier.width(12.dp))
             Box(
@@ -730,7 +736,8 @@ private fun ThemeModeRow(backdrop: Backdrop, themeMode: Int, onChange: (Int) -> 
                     ): IntOffset {
                         return IntOffset(
                             x = anchorBounds.right - popupContentSize.width,
-                            y = anchorBounds.bottom + popupGapPx,
+                            y = (anchorBounds.top - popupContentSize.height - popupGapPx)
+                                .coerceAtLeast(0),
                         )
                     }
                 },

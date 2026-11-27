@@ -136,7 +136,7 @@ private class IsoSettingsState(context: Context) : SettingsModel {
     override val videoTint = mutableStateOf(prefs.getBoolean("video_tint_fallback", true))
     override val height = mutableStateOf(prefs.getInt("dock_height_dp", 64).coerceIn(52, 88))
     override val tabWidth = mutableStateOf(prefs.getInt("tab_width_dp", 76).coerceIn(60, 100))
-    override val sideMargin = mutableStateOf(prefs.getInt("side_margin_dp", 24).coerceIn(12, 40))
+    override val sideMargin = mutableStateOf(prefs.getInt("side_margin_dp", 40).coerceIn(12, 40))
     override val bottomGap = mutableStateOf(prefs.getInt("bottom_gap_dp", 8).coerceIn(0, 28))
 
     override fun setEnabled(value: Boolean) { enabled.value = value; persistAndPush() }
@@ -198,10 +198,18 @@ private class IsoSettingsState(context: Context) : SettingsModel {
         enabled.value = true
         showPlus.value = true
         showLabels.value = true
+        logEnabled.value = true
+        hideDesktop.value = false
+        themeMode.value = 0
+        glassAlpha.value = 100
+        hideBackground.value = false
+        bottomTransparent.value = true
+        videoTint.value = true
         height.value = 64
         tabWidth.value = 76
-        sideMargin.value = 24
+        sideMargin.value = 40
         bottomGap.value = 8
+        com.zaka.wechatglass.DesktopIcon.apply(app, false)
         persistAndPush()
     }
 
