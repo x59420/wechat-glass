@@ -773,7 +773,7 @@ private fun ThemeModeCapsule(
             .clip(shape)
             .background(palette.panel.copy(alpha = 0.97f), shape)
             .border(1.dp, palette.border, shape)
-            .padding(start = 6.dp, top = 2.dp, end = 6.dp, bottom = 6.dp)
+            .padding(6.dp)
     ) {
         modes.forEachIndexed { index, label ->
             val isSelected = selected == index
