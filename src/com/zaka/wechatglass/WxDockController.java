@@ -62,6 +62,10 @@ final class WxDockController {
             new WeakHashMap<Activity, ViewGroup>();
     private static final WeakHashMap<Activity, Boolean> FORCE_FALLBACK =
             new WeakHashMap<Activity, Boolean>();
+    private static final WeakHashMap<Activity, android.view.ViewTreeObserver.OnGlobalLayoutListener> CHAT_WATCHERS =
+            new WeakHashMap<Activity, android.view.ViewTreeObserver.OnGlobalLayoutListener>();
+    private static final WeakHashMap<Activity, Long> CHAT_WATCH_AT =
+            new WeakHashMap<Activity, Long>();
     private static final WeakHashMap<Activity, List<View>> ITEMS =
             new WeakHashMap<Activity, List<View>>();
     private static final WeakHashMap<Activity, Rect> BANDS =
@@ -244,6 +248,52 @@ final class WxDockController {
         MAIN.postDelayed(watch, 600L);
     }
 
+    /** 聊天输入框一出现就立刻收 Dock，不等 200ms 轮询。只认聊天输入框。 */
+    private static void watchChatLayout(final Activity act, final View decor) {
+        synchronized (CHAT_WATCHERS) {
+            if (CHAT_WATCHERS.containsKey(act)) return;
+        }
+        if (!(decor instanceof ViewGroup)) return;
+        final android.view.ViewTreeObserver.OnGlobalLayoutListener listener =
+                new android.view.ViewTreeObserver.OnGlobalLayoutListener() {
+                    @Override
+                    public void onGlobalLayout() {
+                        try {
+                            if (!hasChatInput(decor)) return;
+                            long now = android.os.SystemClock.uptimeMillis();
+                            synchronized (CHAT_WATCH_AT) {
+                                Long last = CHAT_WATCH_AT.get(act);
+                                if (last != null && now - last < 80L) return;
+                                CHAT_WATCH_AT.put(act, now);
+                            }
+                            SUB_PAGE = true;
+                            synchronized (OVERLAYS) {
+                                if (OVERLAYS.containsKey(act)) hideAll();
+                            }
+                        } catch (Throwable ignored) {
+                        }
+                    }
+                };
+        try {
+            decor.getViewTreeObserver().addOnGlobalLayoutListener(listener);
+            synchronized (CHAT_WATCHERS) { CHAT_WATCHERS.put(act, listener); }
+        } catch (Throwable ignored) {
+        }
+    }
+
+    private static void stopChatLayout(Activity act) {
+        if (act == null) return;
+        android.view.ViewTreeObserver.OnGlobalLayoutListener listener;
+        synchronized (CHAT_WATCHERS) { listener = CHAT_WATCHERS.remove(act); }
+        synchronized (CHAT_WATCH_AT) { CHAT_WATCH_AT.remove(act); }
+        if (listener == null) return;
+        try {
+            View decor = act.getWindow() == null ? null : act.getWindow().getDecorView();
+            if (decor != null) decor.getViewTreeObserver().removeOnGlobalLayoutListener(listener);
+        } catch (Throwable ignored) {
+        }
+    }
+
     static void hideAll() {
         java.util.List<Activity> acts;
         synchronized (OVERLAYS) {
@@ -279,6 +329,7 @@ final class WxDockController {
 
     static void release(Activity act) {
         if (act == null) return;
+        stopChatLayout(act);
         teardown(act, "页面销毁");
         synchronized (KNOWN) {
             KNOWN.remove(act);
@@ -585,6 +636,7 @@ final class WxDockController {
         WechatGlass.log("Dock 已挂上");
 
         synchronized (OVERLAYS) { OVERLAYS.put(act, iso); }
+        watchChatLayout(act, decor);
         synchronized (BACKDROPS) { BACKDROPS.put(act, backdrop); }
         synchronized (BARS) { BARS.put(act, bar); }
         synchronized (ITEMS) { ITEMS.put(act, targets[0]); }
