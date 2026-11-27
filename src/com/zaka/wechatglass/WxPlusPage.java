@@ -191,6 +191,7 @@ final class WxPlusPage {
             WxDockController.setCovered(act, true);
             watchPanelClose(act);
         }
+        stylePanel(panel);
         // 微信里不再插任何设置入口（面板里的那一行 / 浮在外面那颗胶囊都去掉了）。
         // 设置只留「我 → 设置」里那一条 + 桌面 wxglass 图标，少一处少一处出错。
         removeRow();
@@ -467,6 +468,26 @@ final class WxPlusPage {
 
     private static final WeakHashMap<View, int[]> POPUP_PADDING = new WeakHashMap<View, int[]>();
     private static final WeakHashMap<ViewGroup, View> POPUP_ROW = new WeakHashMap<ViewGroup, View>();
+
+    /** 微信 8.0.80 的「＋」菜单不是 PopupWindow，而是 decor 里的面板 ViewGroup。 */
+    private static void stylePanel(ViewGroup panel) {
+        if (panel == null) return;
+        try {
+            if (Boolean.TRUE.equals(STYLED.get(panel))) return;
+            Context ctx = panel.getContext();
+            float density = ctx.getResources().getDisplayMetrics().density;
+            boolean dark = isDark(ctx) || hasLightText(panel, 0);
+            GlassDrawable glass = new GlassDrawable(20 * density, dark, true);
+            panel.setBackground(glass);
+            panel.setClipToOutline(true);
+            panel.setElevation(10 * density);
+            attachPopupBackdrop(panel, glass);
+            STYLED.put(panel, Boolean.TRUE);
+            WechatGlass.log("入口:菜单面板已换玻璃底 " + panel.getClass().getName());
+        } catch (Throwable t) {
+            WechatGlass.warnOnce("plus-panel", "菜单玻璃底失败: " + t);
+        }
+    }
 
     private static void stylePopup(final PopupWindow pw) {
         if (pw == null) return;
