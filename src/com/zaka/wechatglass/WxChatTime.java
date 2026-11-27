@@ -41,8 +41,8 @@ import de.robv.android.xposed.XposedHelpers;
  */
 final class WxChatTime {
 
-    /** 用户已取消头像时间功能。 */
-    static final boolean DISABLED = true;
+    /** 头像时间功能。 */
+    static final boolean DISABLED = false;
 
     /** 已知的聊天页类名，挂上 pause/destroy 用来及时摘掉浮层。 */
     private static final String[] CHAT_ACTIVITIES = {
@@ -608,23 +608,20 @@ final class WxChatTime {
                 new WeakHashMap<Class<?>, Field>();
 
         static long timeOf(Object message) {
+            long t = scanObject(message, 0, new java.util.IdentityHashMap<Object, Boolean>());
+            if (t > 0L) return t;
+            // 再扫一层消息对象的 getter（有些版本时间只在方法里）。
             Class<?> cls = message.getClass();
             Method[] candidates = METHODS.get(cls);
             if (candidates == null) {
                 ArrayList<Method> list = new ArrayList<Method>();
                 try {
-                    Method[] all = cls.getMethods();
-                    // 名字里带 time 的先试（有些版本没混淆），其余 long 取值的兜底。
-                    for (Method m : all) {
+                    for (Method m : cls.getMethods()) {
                         if (m.getParameterTypes().length != 0) continue;
                         Class<?> rt = m.getReturnType();
                         if (rt != long.class && rt != int.class) continue;
                         if ("hashCode".equals(m.getName())) continue;
-                        if (m.getName().toLowerCase(Locale.ROOT).contains("time")) {
-                            list.add(0, m);
-                        } else {
-                            list.add(m);
-                        }
+                        list.add(m);
                     }
                 } catch (Throwable ignored) {
                 }
@@ -640,18 +637,75 @@ final class WxChatTime {
                 } catch (Throwable ignored) {
                 }
             }
-            // 方法里翻不到就读字段。
-            Class<?> c = cls;
-            int depth = 0;
-            while (c != null && depth++ < 6) {
+            return 0L;
+        }
+
+        /** 递归扫对象图 / 数组 / List / Map，只认时间和日期字段。 */
+        private static long scanObject(Object value, int depth,
+                                       java.util.IdentityHashMap<Object, Boolean> seen) {
+            if (value == null || depth > 6) return 0L;
+            if (value instanceof Number) return 0L;
+            if (value instanceof java.util.Date) return ((java.util.Date) value).getTime();
+            if (value instanceof java.util.Calendar) return ((java.util.Calendar) value).getTimeInMillis();
+            if (value instanceof CharSequence || value instanceof Boolean
+                    || value instanceof android.view.View || value instanceof android.content.Context
+                    || value instanceof android.graphics.drawable.Drawable) return 0L;
+            if (seen.put(value, Boolean.TRUE) != null) return 0L;
+            int cap = 200;
+            if (seen.size() > cap) return 0L;
+            Class<?> type = value.getClass();
+            if (type.isArray()) {
+                int n = Math.min(java.lang.reflect.Array.getLength(value), 24);
+                for (int i = 0; i < n; i++) {
+                    long t = scanObject(java.lang.reflect.Array.get(value, i), depth + 1, seen);
+                    if (t > 0L) return t;
+                }
+                return 0L;
+            }
+            if (value instanceof Iterable) {
+                int n = 0;
+                for (Object o : (Iterable<?>) value) {
+                    if (n++ >= 24) break;
+                    long t = scanObject(o, depth + 1, seen);
+                    if (t > 0L) return t;
+                }
+                return 0L;
+            }
+            if (value instanceof java.util.Map) {
+                int n = 0;
+                for (Object o : ((java.util.Map<?, ?>) value).values()) {
+                    if (n++ >= 24) break;
+                    long t = scanObject(o, depth + 1, seen);
+                    if (t > 0L) return t;
+                }
+                return 0L;
+            }
+            String cn = type.getName();
+            boolean model = cn.startsWith("com.tencent.mm") || cn.startsWith("androidx.recyclerview");
+            if (!model) return 0L;
+            Class<?> c = type;
+            int fields = 0;
+            while (c != null && c != Object.class && fields < 80) {
                 try {
                     for (Field f : c.getDeclaredFields()) {
-                        if (f.getType() != long.class && f.getType() != int.class) continue;
-                        String name = f.getName().toLowerCase(Locale.ROOT);
-                        if (!name.contains("time")) continue;
-                        f.setAccessible(true);
-                        long ms = normalize(f.getLong(message));
-                        if (ms > 0L) return ms;
+                        if (fields++ >= 80) break;
+                        if (java.lang.reflect.Modifier.isStatic(f.getModifiers())) continue;
+                        Class<?> ft = f.getType();
+                        String fn = f.getName().toLowerCase(Locale.ROOT);
+                        if (ft == long.class || ft == int.class) {
+                            if (!fn.contains("time") && !fn.contains("date")
+                                    && !fn.contains("create") && !fn.contains("send")) continue;
+                            f.setAccessible(true);
+                            long ms = normalize(f.getLong(value));
+                            if (ms > 0L) return ms;
+                        } else if (!ft.isPrimitive()) {
+                            f.setAccessible(true);
+                            Object child = f.get(value);
+                            if (child != null) {
+                                long t = scanObject(child, depth + 1, seen);
+                                if (t > 0L) return t;
+                            }
+                        }
                     }
                 } catch (Throwable ignored) {
                 }
@@ -672,6 +726,25 @@ final class WxChatTime {
                 if (tag != null) {
                     long t = timeOf(tag);
                     if (t > 0L) return t;
+                }
+                // RecyclerView 的 ViewHolder 往往还挂着完整消息对象。
+                View cur = view;
+                int guard = 0;
+                while (cur != null && guard++ < 6) {
+                    String cn = cur.getClass().getName();
+                    if (cn.contains("RecyclerView")) {
+                        try {
+                            Method gh = cur.getClass().getMethod("getChildViewHolder", View.class);
+                            Object holder = gh.invoke(cur, view);
+                            long t = scanObject(holder, 0,
+                                    new java.util.IdentityHashMap<Object, Boolean>());
+                            if (t > 0L) return t;
+                        } catch (Throwable ignored) {
+                        }
+                        break;
+                    }
+                    Object p = cur.getParent();
+                    cur = p instanceof View ? (View) p : null;
                 }
                 if (view instanceof ViewGroup) {
                     ViewGroup group = (ViewGroup) view;
