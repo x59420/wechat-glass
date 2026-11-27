@@ -413,6 +413,12 @@ final class WxDockController {
             return true;
         }
         final View decor = safeDecor(act);
+        // 通讯录页标题是主 tab，但会带搜索框 / 软件渲染，先把二级页状态清掉，
+        // 否则会误判成聊天页，Dock 和兜底层都装不上。
+        if (isContactsPage(decor)) {
+            SUB_PAGE = false;
+            NON_HOST = false;
+        }
         final View content = act.findViewById(android.R.id.content);
         if (!(decor instanceof ViewGroup) || content == null) return false;
         if (content.getWidth() < 50 || content.getHeight() < 50) return false;
@@ -718,7 +724,7 @@ final class WxDockController {
                     boolean otherOnTop = top != null && top != act
                             && !top.isFinishing() && !top.isDestroyed();
                     boolean mainTitleNow = hasMainTitle(decor);
-                    boolean chatOpen = !mainTitleNow && hasChatInput(decor);
+                    boolean chatOpen = !isContactsPage(decor) && !mainTitleNow && hasChatInput(decor);
                     if (chatOpen) {
                         WxChatTime.attachForChat(act);
                     } else {
