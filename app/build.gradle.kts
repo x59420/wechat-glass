@@ -16,8 +16,8 @@ android {
         applicationId = "com.zaka.wechatglass"
         minSdk = 26
         targetSdk = 34
-        versionCode = 110
-        versionName = "0.9.8"
+        versionCode = 112
+        versionName = "0.10.0"
     }
 
     sourceSets {

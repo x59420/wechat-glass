@@ -777,7 +777,7 @@ private fun ThemeModeCapsule(
                 alpha = unfold.value
             }
             .clip(shape)
-            .glassSurface(backdrop, shape)
+            .background(palette.panel.copy(alpha = 0.97f), shape)
             .border(1.dp, palette.border, shape)
             .padding(start = 6.dp, top = 2.dp, end = 6.dp, bottom = 6.dp)
     ) {
@@ -802,6 +802,8 @@ private fun ThemeModeCapsule(
                     if (isSelected) palette.selectedText else palette.primary,
                     13.sp,
                     weight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
+                    modifier = Modifier.fillMaxWidth(),
+                    align = TextAlign.Center,
                 )
             }
         }
@@ -868,11 +870,7 @@ private fun Modifier.glassSurface(backdrop: Backdrop, shape: Shape): Modifier {
             shape = { shape },
             effects = {
                 vibrancy()
-                blur(4.dp.toPx(), 4.dp.toPx())
-                lens(
-                    refractionHeight = 13.dp.toPx(),
-                    refractionAmount = 11.dp.toPx(),
-                )
+                blur(18.dp.toPx(), 18.dp.toPx())
             },
             onDrawSurface = { drawRect(surfaceTint) },
         )
