@@ -39,6 +39,9 @@ import java.util.WeakHashMap;
  */
 final class WxTopBar {
 
+    /** 顶栏 BlurView 在当前微信版本会把窗口拖进软件渲染，先停用，保 Dock。 */
+    static final boolean ENABLED = false;
+
     /** 只有首页需要顶栏。 */
     private static final WeakHashMap<Activity, TopLayer> LAYERS = new WeakHashMap<Activity, TopLayer>();
     /** 已经处理过的顶栏渐变，避免每次刷新重刷背景。 */
@@ -59,6 +62,7 @@ final class WxTopBar {
     }
 
     static void refresh(final Activity act) {
+        if (!ENABLED) { release(act); return; }
         if (act == null) return;
         try {
             if (!WxDockController.isHost(act)) {
@@ -102,6 +106,7 @@ final class WxTopBar {
      * 「我的界面被加了蒙版」。这里每 600ms 看一眼当前是不是「我」页，是就把层撤掉。
      */
     private static void startWatch(final Activity act) {
+        if (!ENABLED) return;
         synchronized (WATCHERS) {
             if (WATCHERS.containsKey(act)) return;
         }
@@ -197,6 +202,7 @@ final class WxTopBar {
     // ------------------------------------------------------------ 主流程
 
     private static void apply(ViewGroup decor, Activity act) {
+        if (!ENABLED) { release(act); return; }
         int w = decor.getWidth();
         int h = decor.getHeight();
         if (w < 200 || h < 400) return;
