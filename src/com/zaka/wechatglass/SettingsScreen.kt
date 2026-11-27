@@ -726,7 +726,7 @@ private fun ThemeModeRow(backdrop: Backdrop, themeMode: Int, onChange: (Int) -> 
     val current = themeMode.coerceIn(0, 2)
     var open by remember { mutableStateOf(false) }
     val offset = with(LocalDensity.current) { IntOffset(0, 8.dp.roundToPx()) }
-    val popupGapPx = with(LocalDensity.current) { 4.dp.roundToPx() }
+    val popupGapPx = with(LocalDensity.current) { 2.dp.roundToPx() }
 
     Box(Modifier.fillMaxWidth()) {
         Row(
