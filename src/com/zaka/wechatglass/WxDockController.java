@@ -726,7 +726,11 @@ final class WxDockController {
                             && currentBar != null
                             && currentBar.isAttachedToWindow()
                             && currentBar.getVisibility() == View.VISIBLE
-                            && SelfMask.effectiveAlpha(currentBar) > 0.01f
+                            // 主动接管后原生底栏本来就被压成 alpha=0；
+                            // 不能用“原生 alpha”来判断要不要显示 Dock，
+                            // 否则切到通讯录时新底栏原始 alpha=0，Dock 会直接消失。
+                            && (SelfMask.masked(currentBar)
+                            || SelfMask.effectiveAlpha(currentBar) > 0.01f)
                             && currentBar.getWidth() > 0;
 
                     // 显隐跟实际画面对齐，而不是跟一个一次性的布尔位：
