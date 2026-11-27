@@ -259,16 +259,28 @@ final class WxDockController {
                     @Override
                     public void onGlobalLayout() {
                         try {
-                            if (!hasChatInput(decor)) return;
                             long now = android.os.SystemClock.uptimeMillis();
                             synchronized (CHAT_WATCH_AT) {
                                 Long last = CHAT_WATCH_AT.get(act);
                                 if (last != null && now - last < 80L) return;
                                 CHAT_WATCH_AT.put(act, now);
                             }
-                            SUB_PAGE = true;
-                            synchronized (OVERLAYS) {
-                                if (OVERLAYS.containsKey(act)) hideAll();
+                            if (hasChatInput(decor)) {
+                                SUB_PAGE = true;
+                                synchronized (OVERLAYS) {
+                                    if (OVERLAYS.containsKey(act)) hideAll();
+                                }
+                                return;
+                            }
+                            // 从聊天返回首页：输入框消失的第一帧就把 Dock 装回来，
+                            // 不再等 200ms 轮询。二级页/添加朋友不在这里恢复。
+                            if (SUB_PAGE && isOnMainTab(act, decor)
+                                    && !isKnownSubPage(decor) && !isAddFriendPage(decor)) {
+                                SUB_PAGE = false;
+                                NON_HOST = false;
+                                synchronized (OVERLAYS) {
+                                    if (!OVERLAYS.containsKey(act)) attempt(act, 0);
+                                }
                             }
                         } catch (Throwable ignored) {
                         }
