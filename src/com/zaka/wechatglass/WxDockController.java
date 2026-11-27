@@ -1387,17 +1387,16 @@ final class WxDockController {
             int tabWidth = (int) (DockPrefs.tabWidthDp(act) * density);
             int innerPad = (int) (8f * density);
 
-            int tabsWidth = tabWidth * tabs + innerPad;
+            int desiredWidth = tabWidth * tabs + innerPad;
             int baseWidth = iso.view().getWidth() > 0 ? iso.view().getWidth() : bandRect.width();
             if (baseWidth <= 0) baseWidth = bandRect.width();
             int available = baseWidth - edge * 2;
-            if (tabsWidth > available) {
-                tabsWidth = Math.max((int) (48f * density) * tabs,
-                        Math.min(tabsWidth, available));
-            }
+            if (available <= 0) return;
+            // 和 KernelSU 一致：Dock 占「屏幕宽 - 左右留白」，tab 在这个宽度里均分。
+            // 不再用固定 tab 宽度居中，否则左右留白设置永远不会生效。
+            int tabsWidth = Math.min(available, Math.max(desiredWidth, available));
             if (tabsWidth <= 0) return;
-
-            int left = Math.max(edge, (baseWidth - tabsWidth) / 2);
+            int left = edge + Math.max(0, (available - tabsWidth) / 2);
             int top = bandTop + bandRect.height()
                     - (int) (DockPrefs.bottomGapDp(act) * density) - pill;
 
@@ -1411,7 +1410,7 @@ final class WxDockController {
                     decor.getWindowVisibleDisplayFrame(visible);
                     int visibleBottom = visible.bottom - overlayLoc[1];
                     if (visibleBottom > 0) {
-                        int limit = visibleBottom - (int) (2f * density) - pill;
+                        int limit = visibleBottom - pill;
                         if (top > limit) top = limit;
                     }
                 }
@@ -1421,7 +1420,7 @@ final class WxDockController {
             int overlayHeight = iso.view().getHeight();
             int navBottom = navigationBarInsetBottom(act);
             if (overlayHeight > 0 && navBottom > 0) {
-                int limit = overlayHeight - navBottom - (int) (2f * density) - pill;
+                int limit = overlayHeight - navBottom - pill;
                 if (top > limit) top = limit;
             }
 
