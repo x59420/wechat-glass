@@ -443,32 +443,15 @@ internal fun SettingsScreen(
                         val bridge = log
                         var logText by remember { mutableStateOf(bridge?.read().orEmpty()) }
                         var notice by remember { mutableStateOf<String?>(null) }
-                        var updateNotice by remember { mutableStateOf<String?>(null) }
-                        var updateUrl by remember { mutableStateOf<String?>(null) }
                         val ctx = LocalContext.current
                         SectionTitle("更新")
                         GlassCard(scene) {
                             TextRow(
                                 title = "检测更新",
-                                subtitle = updateNotice ?: "检查 GitHub 最新版本",
+                                subtitle = "打开 GitHub 仓库查看最新版本",
                                 onClick = {
-                                    val url = updateUrl
-                                    if (url != null) {
-                                        ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
-                                        return@TextRow
-                                    }
-                                    updateNotice = "检查中…"
-                                    Thread {
-                                        val reply = UpdateChecker.latest()
-                                        android.os.Handler(android.os.Looper.getMainLooper()).post {
-                                            if (reply == null) {
-                                                updateNotice = "检查失败，请检查网络"
-                                            } else {
-                                                updateNotice = "最新：${reply.tag}"
-                                                updateUrl = reply.url
-                                            }
-                                        }
-                                    }.start()
+                                    ctx.startActivity(Intent(Intent.ACTION_VIEW,
+                                        Uri.parse("https://github.com/x59420/wechat-glass")))
                                 },
                             )
                         }
@@ -779,7 +762,7 @@ private fun ThemeModeCapsule(
             .clip(shape)
             .glassSurface(backdrop, shape)
             .border(1.dp, palette.border, shape)
-            .padding(6.dp)
+            .padding(start = 6.dp, top = 2.dp, end = 6.dp, bottom = 6.dp)
     ) {
         modes.forEachIndexed { index, label ->
             val isSelected = selected == index
@@ -860,9 +843,7 @@ private fun GlassCard(backdrop: Backdrop, content: @Composable () -> Unit) {
 private fun Modifier.glassSurface(backdrop: Backdrop, shape: Shape): Modifier {
     val supported = remember { android.os.Build.VERSION.SDK_INT >= 33 }
     val palette = LocalSettingsPalette.current
-    return if (LocalSettingsOverlay.current) {
-        this.background(palette.card, shape)
-    } else if (supported) {
+    return if (supported) {
         val surfaceTint = palette.border.copy(alpha = 0.35f)
         this.drawBackdrop(
             backdrop = backdrop,
@@ -1025,46 +1006,54 @@ private fun GlassSlider(
             size = Size(size.width * fraction, trackH),
             cornerRadius = radius,
         )
-        val knob = 9.5.dp.toPx()
+        val knobH = 19.dp.toPx()
+        val knobW = 38.dp.toPx()
         val cx = size.width * fraction
+        val left = (cx - knobW / 2f).coerceIn(0f, (size.width - knobW).coerceAtLeast(0f))
+        val top = trackY - knobH / 2f
+        val knobRadius = CornerRadius(knobH / 2f, knobH / 2f)
+
         // 阴影
-        drawCircle(
+        drawRoundRect(
             color = Color(0x33000000),
-            radius = knob + 1.5.dp.toPx(),
-            center = Offset(cx, trackY + 1.5.dp.toPx()),
+            topLeft = Offset(left, top + 1.5.dp.toPx()),
+            size = Size(knobW, knobH),
+            cornerRadius = knobRadius,
         )
-        // 玻璃本体：左上高光、右下透明
-        drawCircle(
-            brush = Brush.radialGradient(
+        // 玻璃胶囊：左上白、右下透明
+        drawRoundRect(
+            brush = Brush.linearGradient(
                 colors = listOf(
-                    Color(0xE6FFFFFF),
-                    Color(0x99FFFFFF),
-                    Color(0x33FFFFFF),
+                    Color(0xF2FFFFFF),
+                    Color(0xB8FFFFFF),
+                    Color(0x55FFFFFF),
                 ),
-                center = Offset(cx - knob * 0.35f, trackY - knob * 0.35f),
-                radius = knob * 1.55f,
+                start = Offset(left, top),
+                end = Offset(left + knobW, top + knobH),
             ),
-            radius = knob,
-            center = Offset(cx, trackY),
+            topLeft = Offset(left, top),
+            size = Size(knobW, knobH),
+            cornerRadius = knobRadius,
         )
         // 边缘亮圈
-        drawCircle(
+        drawRoundRect(
             color = Color(0xCCFFFFFF),
-            radius = knob,
-            center = Offset(cx, trackY),
+            topLeft = Offset(left, top),
+            size = Size(knobW, knobH),
+            cornerRadius = knobRadius,
             style = androidx.compose.ui.graphics.drawscope.Stroke(width = 0.8.dp.toPx()),
         )
-        // 顶部小高光
-        drawCircle(
+        // 顶部高光
+        drawRoundRect(
             brush = Brush.linearGradient(
                 colors = listOf(Color(0xFFFFFFFF), Color(0x00FFFFFF)),
-                start = Offset(cx - knob * 0.45f, trackY - knob * 0.55f),
-                end = Offset(cx + knob * 0.2f, trackY + knob * 0.1f),
+                start = Offset(left + knobW * 0.15f, top + 1.dp.toPx()),
+                end = Offset(left + knobW * 0.45f, top + knobH * 0.52f),
             ),
-            radius = knob * 0.52f,
-            center = Offset(cx - knob * 0.22f, trackY - knob * 0.28f),
-        )
-    }
+            topLeft = Offset(left + knobW * 0.16f, top + 1.4.dp.toPx()),
+            size = Size(knobW * 0.55f, knobH * 0.42f),
+            cornerRadius = CornerRadius(knobH * 0.21f, knobH * 0.21f),
+        )    }
 }
 
 @Composable
@@ -1089,25 +1078,3 @@ private fun TextRow(title: String, subtitle: String, onClick: () -> Unit) {
 }
 
 
-/** 轻量更新检查：只读 GitHub 最新 release，不自动下载 APK。 */
-private object UpdateChecker {
-    data class Release(val tag: String, val url: String)
-
-    fun latest(): Release? {
-        return try {
-            val conn = java.net.URL(
-                "https://github.com/x59420/wechat-glass/releases/latest"
-            ).openConnection() as java.net.HttpURLConnection
-            conn.connectTimeout = 8000
-            conn.readTimeout = 8000
-            conn.instanceFollowRedirects = true
-            conn.setRequestProperty("User-Agent", "wxglass-updater")
-            conn.inputStream.close()
-            val finalUrl = conn.url.toString()
-            val tag = finalUrl.substringAfterLast('/')
-            if (tag.isBlank()) null else Release(tag, finalUrl)
-        } catch (t: Throwable) {
-            null
-        }
-    }
-}
