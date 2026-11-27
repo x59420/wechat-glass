@@ -119,28 +119,14 @@ public final class SettingsSync {
                     intent.getBooleanExtra("bottom_transparent", true));
             changed = true;
         }
-        if (intent.hasExtra("menu_transparent")) {
-            DockPrefs.setMenuTransparent(context,
-                    intent.getBooleanExtra("menu_transparent", true));
-            changed = true;
-        }
         if (intent.hasExtra("video_tint")) {
             DockPrefs.setVideoTintFallback(context,
                     intent.getBooleanExtra("video_tint", true));
             changed = true;
         }
-        if (intent.hasExtra("anti_revoke")) {
-            DockPrefs.setAntiRevoke(context, intent.getBooleanExtra("anti_revoke", true));
-            changed = true;
-        }
-        if (intent.hasExtra("chat_time")) {
-            DockPrefs.setChatTime(context, intent.getBooleanExtra("chat_time", true));
-            changed = true;
-        }
         if (!changed) return;
         WechatGlass.log("设置:收到设置界面的改动，立刻应用");
         WxDockController.applySettingsToAll();
-        WxChatTime.onSettingsChanged();
     }
 
     // ------------------------------------------------------------ 模块进程侧
@@ -148,9 +134,8 @@ public final class SettingsSync {
     /** 设置界面每改一项就调一次：广播出去 + （兜底）把 prefs 文件设成可读。 */
     static void push(Context context, boolean enabled, boolean showPlus, boolean showLabels,
                      boolean verboseLog, int height, int tabWidth, int sideMargin, int bottomGap,
-                     boolean bottomTransparent, boolean menuTransparent, boolean videoTint,
-                     int themeMode, int glassAlpha, boolean hideBackground,
-                     boolean antiRevoke, boolean chatTime) {
+                     boolean bottomTransparent, boolean videoTint,
+                     int themeMode, int glassAlpha, boolean hideBackground) {
         if (context == null) return;
         try {
             Intent intent = new Intent(ACTION);
@@ -164,15 +149,12 @@ public final class SettingsSync {
             intent.putExtra("side_margin", sideMargin);
             intent.putExtra("bottom_gap", bottomGap);
             intent.putExtra("bottom_transparent", bottomTransparent);
-            intent.putExtra("menu_transparent", menuTransparent);
             intent.putExtra("video_tint", videoTint);
             // 外观三项以前漏在广播外面，只能等宿主一秒轮询兜底：
             // 用户在设置里拖透明度会「慢一拍」，看起来就像没生效。
             intent.putExtra("theme_mode", themeMode);
             intent.putExtra("glass_alpha", glassAlpha);
             intent.putExtra("hide_glass_background", hideBackground);
-            intent.putExtra("anti_revoke", antiRevoke);
-            intent.putExtra("chat_time", chatTime);
             context.sendBroadcast(intent);
         } catch (Throwable t) {
             WechatGlass.warnOnce("settings-push", "发送设置广播失败: " + t);

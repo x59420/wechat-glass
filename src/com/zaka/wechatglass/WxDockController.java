@@ -830,11 +830,6 @@ final class WxDockController {
                             && !top.isFinishing() && !top.isDestroyed();
                     boolean mainTitleNow = hasMainTitle(decor);
                     boolean chatOpen = !isContactsPage(decor) && !mainTitleNow && hasChatInput(decor);
-                    if (chatOpen) {
-                        WxChatTime.attachForChat(act);
-                    } else {
-                        WxChatTime.detach(act);
-                    }
                     boolean nonMain = hasNonMainPageTitle(decor);
                     boolean mainTitle = hasMainTitle(decor);
                     boolean explicitSub = hasExplicitNonMainTitle(decor);
@@ -857,8 +852,8 @@ final class WxDockController {
                         SUB_PAGE = false;
                         NON_HOST = false;
                     }
-                    boolean blocked = chatOpen || SUB_PAGE || (top != null
-                            && (isBlockedPage(top) || WxChatTime.isChatPage(top)));
+                    boolean blocked = chatOpen || SUB_PAGE
+                            || (top != null && isBlockedPage(top));
                     boolean active = !otherOnTop && !blocked && !NON_HOST;
                     boolean covered;
                     synchronized (COVERED) {

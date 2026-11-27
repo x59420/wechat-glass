@@ -112,10 +112,7 @@ internal class SettingsState(context: Context) : SettingsModel {
     override val glassAlpha = mutableStateOf(DockPrefs.glassAlpha(ctx))
     override val hideBackground = mutableStateOf(DockPrefs.hideGlassBackground(ctx))
     override val bottomTransparent = mutableStateOf(DockPrefs.bottomTransparent(ctx))
-    override val menuTransparent = mutableStateOf(DockPrefs.menuTransparent(ctx))
     override val videoTint = mutableStateOf(DockPrefs.videoTintFallback(ctx))
-    override val antiRevoke = mutableStateOf(DockPrefs.antiRevoke(ctx))
-    override val chatTime = mutableStateOf(DockPrefs.chatTime(ctx))
 
     override val height = mutableStateOf(DockPrefs.heightDp(ctx))
     override val tabWidth = mutableStateOf(DockPrefs.tabWidthDp(ctx))
@@ -143,18 +140,6 @@ internal class SettingsState(context: Context) : SettingsModel {
     override fun setLogEnabled(value: Boolean) {
         logEnabled.value = value
         DockPrefs.setLogEnabled(ctx, value)
-        push()
-    }
-
-    override fun setAntiRevoke(value: Boolean) {
-        antiRevoke.value = value
-        DockPrefs.setAntiRevoke(ctx, value)
-        push()
-    }
-
-    override fun setChatTime(value: Boolean) {
-        chatTime.value = value
-        DockPrefs.setChatTime(ctx, value)
         push()
     }
 
@@ -196,12 +181,6 @@ internal class SettingsState(context: Context) : SettingsModel {
     override fun setBottomTransparent(value: Boolean) {
         bottomTransparent.value = value
         DockPrefs.setBottomTransparent(ctx, value)
-        push()
-    }
-
-    override fun setMenuTransparent(value: Boolean) {
-        menuTransparent.value = value
-        DockPrefs.setMenuTransparent(ctx, value)
         push()
     }
 
@@ -253,13 +232,10 @@ internal class SettingsState(context: Context) : SettingsModel {
             sideMargin.value,
             bottomGap.value,
             bottomTransparent.value,
-            menuTransparent.value,
             videoTint.value,
             themeMode.value,
             glassAlpha.value,
             hideBackground.value,
-            antiRevoke.value,
-            chatTime.value,
         )
     }
 
@@ -407,13 +383,7 @@ internal fun SettingsScreen(
                                 checked = state.bottomTransparent.value,
                                 onChange = state::setBottomTransparent,
                             )
-                            Divider()
-                            SwitchRow(
-                                title = "弹层背景透明",
-                                subtitle = "「＋」面板、长按菜单那层底也透明",
-                                checked = state.menuTransparent.value,
-                                onChange = state::setMenuTransparent,
-                            )
+
                             Divider()
                             SwitchRow(
                                 title = "抓不到画面用主色垫底",

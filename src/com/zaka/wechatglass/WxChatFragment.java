@@ -41,8 +41,6 @@ final class WxChatFragment {
                         WechatGlass.log("聊天Fragment:resume "
                                 + param.thisObject.getClass().getName());
                         WxDockController.suppress(true);
-                        WxTopBar.releaseAll();
-                        if (act != null) WxChatTime.attachForChat(act);
                     } catch (Throwable ignored) {
                     }
                 }
@@ -55,7 +53,6 @@ final class WxChatFragment {
                         Activity act = activityOf(param.thisObject);
                         WechatGlass.log("聊天Fragment:pause "
                                 + param.thisObject.getClass().getName());
-                        if (act != null) WxChatTime.detach(act);
                         WxDockController.suppress(false);
                     } catch (Throwable ignored) {
                     }

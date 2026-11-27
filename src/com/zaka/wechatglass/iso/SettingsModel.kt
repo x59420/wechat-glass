@@ -15,10 +15,7 @@ internal interface SettingsModel {
     val glassAlpha: MutableState<Int>
     val hideBackground: MutableState<Boolean>
     val bottomTransparent: MutableState<Boolean>
-    val menuTransparent: MutableState<Boolean>
     val videoTint: MutableState<Boolean>
-    val antiRevoke: MutableState<Boolean>
-    val chatTime: MutableState<Boolean>
     val height: MutableState<Int>
     val tabWidth: MutableState<Int>
     val sideMargin: MutableState<Int>
@@ -32,10 +29,7 @@ internal interface SettingsModel {
     fun setGlassAlpha(value: Int)
     fun setHideBackground(value: Boolean)
     fun setBottomTransparent(value: Boolean)
-    fun setMenuTransparent(value: Boolean)
     fun setVideoTint(value: Boolean)
-    fun setAntiRevoke(value: Boolean)
-    fun setChatTime(value: Boolean)
     fun setHeight(value: Int)
     fun setTabWidth(value: Int)
     fun setSideMargin(value: Int)
