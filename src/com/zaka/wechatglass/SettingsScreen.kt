@@ -69,6 +69,12 @@ import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupPositionProvider
 import androidx.compose.ui.window.PopupProperties
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.tween
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.unit.sp
 import kotlin.math.roundToInt
 import top.yukonga.miuix.kmp.blur.Backdrop
@@ -687,7 +693,7 @@ private fun ThemeModeRow(backdrop: Backdrop, themeMode: Int, onChange: (Int) -> 
     val current = themeMode.coerceIn(0, 2)
     var open by remember { mutableStateOf(false) }
     val offset = with(LocalDensity.current) { IntOffset(0, 8.dp.roundToPx()) }
-    val popupGapPx = with(LocalDensity.current) { 8.dp.roundToPx() }
+    val popupGapPx = with(LocalDensity.current) { 4.dp.roundToPx() }
 
     Box(Modifier.fillMaxWidth()) {
         Row(
@@ -753,9 +759,18 @@ private fun ThemeModeCapsule(
 ) {
     val palette = LocalSettingsPalette.current
     val shape = RoundedCornerShape(22.dp)
+    val unfold = remember { Animatable(0f) }
+    LaunchedEffect(Unit) {
+        unfold.animateTo(1f, tween(durationMillis = 180, easing = FastOutSlowInEasing))
+    }
     Column(
         Modifier
             .width(170.dp)
+            .graphicsLayer {
+                transformOrigin = TransformOrigin(0.5f, 0f)
+                scaleY = 0.35f + 0.65f * unfold.value
+                alpha = unfold.value
+            }
             .clip(shape)
             .glassSurface(backdrop, shape)
             .border(1.dp, palette.border, shape)
