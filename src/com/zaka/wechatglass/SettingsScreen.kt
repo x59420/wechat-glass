@@ -63,10 +63,14 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntRect
+import androidx.compose.ui.unit.IntSize
+import androidx.compose.ui.unit.LayoutDirection
+import androidx.compose.ui.window.Popup
+import androidx.compose.ui.window.PopupPositionProvider
+import androidx.compose.ui.window.PopupProperties
 import androidx.compose.ui.unit.sp
 import kotlin.math.roundToInt
-import androidx.compose.ui.window.Popup
-import androidx.compose.ui.window.PopupProperties
 import top.yukonga.miuix.kmp.blur.Backdrop
 import top.yukonga.miuix.kmp.blur.blur
 import top.yukonga.miuix.kmp.blur.drawBackdrop
@@ -468,7 +472,11 @@ internal fun SettingsScreen(
                                     onClick = {},
                                 )
                             } else {
-                                Row(Modifier.fillMaxWidth()) {
+                                Row(
+                                    Modifier.fillMaxWidth(),
+                                    horizontalArrangement =
+                                        androidx.compose.foundation.layout.Arrangement.spacedBy(8.dp),
+                                ) {
                                     LogAction("刷新", Modifier.weight(1f)) {
                                         logText = bridge.read()
                                         notice = null
@@ -679,6 +687,7 @@ private fun ThemeModeRow(backdrop: Backdrop, themeMode: Int, onChange: (Int) -> 
     val current = themeMode.coerceIn(0, 2)
     var open by remember { mutableStateOf(false) }
     val offset = with(LocalDensity.current) { IntOffset(0, 8.dp.roundToPx()) }
+    val popupGapPx = with(LocalDensity.current) { 8.dp.roundToPx() }
 
     Box(Modifier.fillMaxWidth()) {
         Row(
@@ -709,8 +718,19 @@ private fun ThemeModeRow(backdrop: Backdrop, themeMode: Int, onChange: (Int) -> 
         }
         if (open) {
             Popup(
-                alignment = Alignment.BottomEnd,
-                offset = offset,
+                popupPositionProvider = object : PopupPositionProvider {
+                    override fun calculatePosition(
+                        anchorBounds: IntRect,
+                        windowSize: IntSize,
+                        layoutDirection: LayoutDirection,
+                        popupContentSize: IntSize,
+                    ): IntOffset {
+                        return IntOffset(
+                            x = anchorBounds.right - popupContentSize.width,
+                            y = anchorBounds.bottom + popupGapPx,
+                        )
+                    }
+                },
                 onDismissRequest = { open = false },
                 properties = PopupProperties(focusable = true),
             ) {
