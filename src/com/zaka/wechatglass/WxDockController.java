@@ -741,6 +741,12 @@ final class WxDockController {
                     } else if (nonMain) {
                         SUB_PAGE = true;
                     }
+                    if (isContactsPage(decor)) {
+                        // 通讯录标题就是主 tab；任何上一页残留的 SUB_PAGE 都必须清掉。
+                        chatOpen = false;
+                        SUB_PAGE = false;
+                        NON_HOST = false;
+                    }
                     boolean blocked = chatOpen || SUB_PAGE || (top != null
                             && (isBlockedPage(top) || WxChatTime.isChatPage(top)));
                     boolean active = !otherOnTop && !blocked && !NON_HOST;
