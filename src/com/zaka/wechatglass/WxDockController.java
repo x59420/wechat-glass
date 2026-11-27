@@ -420,6 +420,10 @@ final class WxDockController {
             SUB_PAGE = false;
             NON_HOST = false;
         }
+        if (isAddFriendPage(decor)) {
+            SUB_PAGE = true;
+            return true;
+        }
         final View content = act.findViewById(android.R.id.content);
         if (!(decor instanceof ViewGroup) || content == null) return false;
         if (content.getWidth() < 50 || content.getHeight() < 50) return false;
@@ -747,8 +751,14 @@ final class WxDockController {
                     } else if (nonMain) {
                         SUB_PAGE = true;
                     }
+                    boolean addFriendNow = isAddFriendPage(decor);
+                    if (addFriendNow) {
+                        chatOpen = false;
+                        explicitSub = true;
+                        SUB_PAGE = true;
+                    }
                     boolean mainTab = isOnMainTab(act, decor);
-                    if (isContactsPage(decor) || (mainTab && !chatOpen && !explicitSub)) {
+                    if (!addFriendNow && (isContactsPage(decor) || (mainTab && !chatOpen && !explicitSub))) {
                         // 四个主 tab 都以底栏选中项为准；聊天/二级页除外。
                         chatOpen = false;
                         SUB_PAGE = false;
@@ -1092,6 +1102,48 @@ final class WxDockController {
      * 胶囊按设置的高度 / 单格宽度算，整组按屏幕宽度居中，底部离手势条留间距。
      * 微信没有「＋」，所以 plusRect 给空矩形，渲染层自然不画那个圆球。
      */
+    /** 添加朋友页是 LauncherUI 里的 Fragment，底栏选中项仍是微信，不能只看 tab。 */
+    private static boolean isAddFriendPage(View decor) {
+        if (!(decor instanceof ViewGroup)) return false;
+        try {
+            java.util.ArrayDeque<View> q = new java.util.ArrayDeque<View>();
+            java.util.IdentityHashMap<View, Boolean> seen = new java.util.IdentityHashMap<View, Boolean>();
+            q.add(decor);
+            java.util.HashSet<String> hits = new java.util.HashSet<String>();
+            int budget = 12000;
+            int[] loc = new int[2];
+            int screenH = decor.getResources().getDisplayMetrics().heightPixels;
+            while (!q.isEmpty() && budget-- > 0) {
+                View v = q.poll();
+                if (v == null || seen.put(v, Boolean.TRUE) != null) continue;
+                if (v instanceof android.widget.TextView && v.isShown()) {
+                    v.getLocationInWindow(loc);
+                    if (loc[1] < screenH * 0.65f) {
+                        CharSequence cs = ((android.widget.TextView) v).getText();
+                        if (cs != null) {
+                            String t = cs.toString().trim();
+                            if (t.equals("添加朋友") || t.equals("扫一扫")
+                                    || t.equals("手机联系人") || t.equals("雷达")
+                                    || t.equals("面对面建群")) {
+                                hits.add(t);
+                            }
+                        }
+                    }
+                }
+                if (v instanceof ViewGroup) {
+                    ViewGroup g = (ViewGroup) v;
+                    for (int i = 0; i < g.getChildCount(); i++) {
+                        View c = g.getChildAt(i);
+                        if (c != null && !c.getClass().getName().startsWith(WechatGlass.PKG)) q.add(c);
+                    }
+                }
+            }
+            return hits.size() >= 2;
+        } catch (Throwable t) {
+            return false;
+        }
+    }
+
     /** 通讯录页会强制软件渲染，Compose 的 RuntimeShader 不能用。 */
     private static boolean isContactsPage(View decor) {
         if (!(decor instanceof ViewGroup)) return false;
