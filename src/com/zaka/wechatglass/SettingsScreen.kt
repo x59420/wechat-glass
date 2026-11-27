@@ -1025,10 +1025,44 @@ private fun GlassSlider(
             size = Size(size.width * fraction, trackH),
             cornerRadius = radius,
         )
+        val knob = 9.5.dp.toPx()
+        val cx = size.width * fraction
+        // 阴影
         drawCircle(
-            color = Color.White,
-            radius = 9.dp.toPx(),
-            center = Offset(size.width * fraction, trackY),
+            color = Color(0x33000000),
+            radius = knob + 1.5.dp.toPx(),
+            center = Offset(cx, trackY + 1.5.dp.toPx()),
+        )
+        // 玻璃本体：左上高光、右下透明
+        drawCircle(
+            brush = Brush.radialGradient(
+                colors = listOf(
+                    Color(0xE6FFFFFF),
+                    Color(0x99FFFFFF),
+                    Color(0x33FFFFFF),
+                ),
+                center = Offset(cx - knob * 0.35f, trackY - knob * 0.35f),
+                radius = knob * 1.55f,
+            ),
+            radius = knob,
+            center = Offset(cx, trackY),
+        )
+        // 边缘亮圈
+        drawCircle(
+            color = Color(0xCCFFFFFF),
+            radius = knob,
+            center = Offset(cx, trackY),
+            style = androidx.compose.ui.graphics.drawscope.Stroke(width = 0.8.dp.toPx()),
+        )
+        // 顶部小高光
+        drawCircle(
+            brush = Brush.linearGradient(
+                colors = listOf(Color(0xFFFFFFFF), Color(0x00FFFFFF)),
+                start = Offset(cx - knob * 0.45f, trackY - knob * 0.55f),
+                end = Offset(cx + knob * 0.2f, trackY + knob * 0.1f),
+            ),
+            radius = knob * 0.52f,
+            center = Offset(cx - knob * 0.22f, trackY - knob * 0.28f),
         )
     }
 }
