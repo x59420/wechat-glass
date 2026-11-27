@@ -701,13 +701,15 @@ private fun ThemeModeRow(backdrop: Backdrop, themeMode: Int, onChange: (Int) -> 
     val modes = listOf("跟随系统", "浅色", "深色")
     val current = themeMode.coerceIn(0, 2)
     var open by remember { mutableStateOf(false) }
-    val popupGapPx = with(LocalDensity.current) { 2.dp.roundToPx() }
+    var rowHeightPx by remember { mutableStateOf(0) }
+    val liftPx = with(LocalDensity.current) { 11.dp.roundToPx() }
 
     Box(Modifier.fillMaxWidth()) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier
                 .fillMaxWidth()
+                .onGloballyPositioned { rowHeightPx = it.size.height }
                 .clickable(
                     interactionSource = remember { MutableInteractionSource() },
                     indication = null,
@@ -726,30 +728,24 @@ private fun ThemeModeRow(backdrop: Backdrop, themeMode: Int, onChange: (Int) -> 
                     .padding(horizontal = 14.dp, vertical = 9.dp)
             ) {
                 Label(modes[current], palette.primary, 13.sp, weight = FontWeight.Medium)
-                if (open) {
-                    DropdownMenu(
-                        expanded = open,
-                        onDismissRequest = { open = false },
-                        offset = androidx.compose.ui.unit.DpOffset(0.dp, 2.dp),
-                        modifier = Modifier.width(170.dp),
-                        containerColor = Color.Transparent,
-                        tonalElevation = 0.dp,
-                        shadowElevation = 0.dp,
-                        shape = RoundedCornerShape(22.dp),
-                        properties = PopupProperties(focusable = true),
-                    ) {
-                        ThemeModeCapsule(backdrop, modes, current) { index ->
-                            onChange(index)
-                            open = false
-                        }
-                    }
+            }
+        }
+        if (open && rowHeightPx > 0) {
+            Popup(
+                alignment = Alignment.TopEnd,
+                offset = IntOffset(0, rowHeightPx - liftPx),
+                onDismissRequest = { open = false },
+                properties = PopupProperties(focusable = true),
+            ) {
+                ThemeModeCapsule(backdrop, modes, current) { index ->
+                    onChange(index)
+                    open = false
                 }
             }
         }
     }
 }
 
-/** 弹出来的那颗悬浮玻璃胶囊。 */
 @Composable
 private fun ThemeModeCapsule(
     backdrop: Backdrop,
