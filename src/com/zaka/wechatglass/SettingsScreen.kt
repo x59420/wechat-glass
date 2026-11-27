@@ -740,7 +740,7 @@ private fun ThemeModeRow(backdrop: Backdrop, themeMode: Int, onChange: (Int) -> 
                 .padding(vertical = 13.dp)
         ) {
             Column(Modifier.weight(1f)) {
-                Label("深浅模式", palette.primary, 15.sp)
+                Label("主题", palette.primary, 15.sp)
                 Spacer(Modifier.height(3.dp))
                 Label("玻璃和这个设置页都跟着它", palette.secondary, 11.5.sp)
             }
@@ -800,8 +800,10 @@ private fun ThemeModeCapsule(
         Modifier
             .width(170.dp)
             .graphicsLayer {
-                transformOrigin = TransformOrigin(0.5f, 0f)
-                scaleY = 0.35f + 0.65f * unfold.value
+                // 从右上角往左下角展开
+                transformOrigin = TransformOrigin(1f, 0f)
+                scaleX = 0.45f + 0.55f * unfold.value
+                scaleY = 0.30f + 0.70f * unfold.value
                 alpha = unfold.value
             }
             .clip(shape)
