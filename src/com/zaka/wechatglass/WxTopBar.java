@@ -796,7 +796,7 @@ final class WxTopBar {
                 Paint mask = new Paint(Paint.ANTI_ALIAS_FLAG);
                 // 方向：顶栏那一条最实，往上逐渐淡到透明（不是从上往下糊）。
                 mask.setShader(new LinearGradient(0, 0, 0, bandH,
-                        new int[]{0x00FFFFFF, 0x55FFFFFF, 0xD8FFFFFF, 0xFFFFFFFF},
+                        new int[]{0xFFFFFFFF, 0xD8FFFFFF, 0x55FFFFFF, 0x00FFFFFF},
                         new float[]{0f, 0.30f, 0.76f, 1f}, Shader.TileMode.CLAMP));
                 mask.setXfermode(new android.graphics.PorterDuffXfermode(
                         android.graphics.PorterDuff.Mode.DST_IN));
