@@ -1104,9 +1104,37 @@ final class WxDockController {
     }
 
     /** 聊天页底部一定有输入框；首页没有。用它判断当前是不是聊天 Fragment。 */
+    /** 聊天页的根：消息列表 / 头像 / 输入栏任一出现就说明已经进了聊天，
+     *  不用等输入框真正弹起来。 */
+    private static boolean hasChatRoot(ViewGroup root) {
+        java.util.ArrayDeque<View> q = new java.util.ArrayDeque<View>();
+        java.util.IdentityHashMap<View, Boolean> seen = new java.util.IdentityHashMap<View, Boolean>();
+        q.add(root);
+        int budget = 12000;
+        while (!q.isEmpty() && budget-- > 0) {
+            View v = q.poll();
+            if (v == null || seen.put(v, Boolean.TRUE) != null) continue;
+            if (!v.isShown() || v.getWidth() <= 0 || v.getHeight() <= 0) continue;
+            String n = v.getClass().getName();
+            if (n.contains("ChattingAvatar") || n.contains("MMChattingListView")
+                    || n.contains("ChattingFooter") || n.contains("chatting.viewitems")) {
+                return true;
+            }
+            if (v instanceof ViewGroup) {
+                ViewGroup g = (ViewGroup) v;
+                for (int i = 0; i < g.getChildCount(); i++) {
+                    View c = g.getChildAt(i);
+                    if (c != null && !c.getClass().getName().startsWith(WechatGlass.PKG)) q.add(c);
+                }
+            }
+        }
+        return false;
+    }
+
     private static boolean hasChatInput(View root) {
         try {
             if (!(root instanceof ViewGroup)) return false;
+            if (hasChatRoot((ViewGroup) root)) return true;
             java.util.ArrayDeque<View> queue = new java.util.ArrayDeque<View>();
             java.util.IdentityHashMap<View, Boolean> seen =
                     new java.util.IdentityHashMap<View, Boolean>();
