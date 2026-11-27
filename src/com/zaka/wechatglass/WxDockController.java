@@ -1010,7 +1010,7 @@ final class WxDockController {
                         String h = hint == null ? "" : hint.toString();
                         // 首页/搜索页也有 EditText，不能只凭“底部有输入框”就认成聊天。
                         if (h.contains("按住") || h.contains("说话")
-                                || h.contains("转文字") || h.contains("消息")) {
+                                || h.contains("转文字")) {
                             return true;
                         }
                     }
