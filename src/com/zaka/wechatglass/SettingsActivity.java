@@ -19,6 +19,7 @@ public final class SettingsActivity extends Activity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        DesktopIcon.apply(this, DockPrefs.hideDesktopIcon(this));
         try {
             SettingsHost.attach(this, WechatGlass.VER);
         } catch (Throwable t) {

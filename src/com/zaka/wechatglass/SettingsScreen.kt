@@ -109,6 +109,7 @@ internal class SettingsState(context: Context) : SettingsModel {
     override val showPlus = mutableStateOf(DockPrefs.showPlusButton(ctx))
     override val showLabels = mutableStateOf(DockPrefs.showLabels(ctx))
     override val logEnabled = mutableStateOf(DockPrefs.logEnabled(ctx))
+    override val hideDesktop = mutableStateOf(DockPrefs.hideDesktopIcon(ctx))
     override val themeMode = mutableStateOf(DockPrefs.themeMode(ctx))
     override val glassAlpha = mutableStateOf(DockPrefs.glassAlpha(ctx))
     override val hideBackground = mutableStateOf(DockPrefs.hideGlassBackground(ctx))
@@ -142,6 +143,11 @@ internal class SettingsState(context: Context) : SettingsModel {
         logEnabled.value = value
         DockPrefs.setLogEnabled(ctx, value)
         push()
+    }
+
+    override fun setHideDesktop(value: Boolean) {
+        hideDesktop.value = value
+        DockPrefs.setHideDesktopIcon(ctx, value)
     }
 
     override fun setThemeMode(value: Int) {
@@ -454,6 +460,13 @@ internal fun SettingsScreen(
                                         Uri.parse("https://github.com/x59420/wechat-glass")))
                                 },
                             )
+                            Divider()
+                            SwitchRow(
+                                title = "隐藏桌面图标",
+                                subtitle = "仍可从微信「我 → 设置」进入",
+                                checked = state.hideDesktop.value,
+                                onChange = state::setHideDesktop,
+                            )
                         }
                         Spacer(Modifier.height(12.dp))
                         SectionTitle("运行日志")
@@ -662,8 +675,6 @@ private fun TopBar(version: String, onBack: () -> Unit) {
         }
         Spacer(Modifier.width(6.dp))
         Label("wxglass 设置", palette.primary, 19.sp, weight = FontWeight.SemiBold)
-        Spacer(Modifier.width(10.dp))
-        Label(version, palette.secondary, 12.sp)
         Spacer(Modifier.weight(1f))
     }
 }

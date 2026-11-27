@@ -24,6 +24,7 @@ final class DockPrefs {
     private static final String KEY_ENTRY_OFFSET = "entry_top_offset_dp";
     /** 日志开关：关掉之后只留警告/错误，LSPosed 里不再刷日常流程。 */
     private static final String KEY_LOG = "verbose_log";
+    private static final String KEY_HIDE_DESKTOP = "hide_desktop_icon";
     private static final String KEY_THEME_MODE = "theme_mode";
     /** 玻璃表面的不透明度（0-100，100 = 现在这套默认浓淡）。 */
     private static final String KEY_GLASS_ALPHA = "glass_alpha";
@@ -123,6 +124,16 @@ final class DockPrefs {
     /** 设置入口在抖音设置页里往下挪多少（避开顶部标题栏）。 */
     static int entryOffsetDp(Context context) {
         return clamp(readInt(context, KEY_ENTRY_OFFSET, 0), 0, 240);
+    }
+
+    /** 隐藏桌面图标；设置 Activity 仍可被微信入口调用。 */
+    static boolean hideDesktopIcon(Context context) {
+        return readBool(context, KEY_HIDE_DESKTOP, false);
+    }
+
+    static void setHideDesktopIcon(Context context, boolean value) {
+        writeBool(context, KEY_HIDE_DESKTOP, value);
+        DesktopIcon.apply(context, value);
     }
 
     /** 日志开关（默认开）：关掉只保留警告/错误。 */
@@ -244,6 +255,8 @@ final class DockPrefs {
             editor.putInt(KEY_BOTTOM_GAP, remote.getInt(KEY_BOTTOM_GAP, DEF_BOTTOM_GAP));
             editor.putInt(KEY_ENTRY_OFFSET, remote.getInt(KEY_ENTRY_OFFSET, 0));
             editor.putBoolean(KEY_LOG, remote.getBoolean(KEY_LOG, true));
+            editor.putBoolean(KEY_HIDE_DESKTOP,
+                    remote.getBoolean(KEY_HIDE_DESKTOP, false));
             editor.putInt(KEY_THEME_MODE, remote.getInt(KEY_THEME_MODE, 0));
             editor.putInt(KEY_GLASS_ALPHA, remote.getInt(KEY_GLASS_ALPHA, 100));
             editor.putBoolean(KEY_HIDE_BG, remote.getBoolean(KEY_HIDE_BG, false));

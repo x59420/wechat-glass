@@ -128,6 +128,7 @@ private class IsoSettingsState(context: Context) : SettingsModel {
     override val showPlus = mutableStateOf(prefs.getBoolean("show_plus", true))
     override val showLabels = mutableStateOf(prefs.getBoolean("show_labels", true))
     override val logEnabled = mutableStateOf(prefs.getBoolean("verbose_log", true))
+    override val hideDesktop = mutableStateOf(prefs.getBoolean("hide_desktop_icon", false))
     override val themeMode = mutableStateOf(prefs.getInt("theme_mode", 0).coerceIn(0, 2))
     override val glassAlpha = mutableStateOf(prefs.getInt("glass_alpha", 100).coerceIn(0, 100))
     override val hideBackground = mutableStateOf(prefs.getBoolean("hide_glass_background", false))
@@ -142,6 +143,7 @@ private class IsoSettingsState(context: Context) : SettingsModel {
     override fun setShowPlus(value: Boolean) { showPlus.value = value; persistAndPush() }
     override fun setShowLabels(value: Boolean) { showLabels.value = value; persistAndPush() }
     override fun setLogEnabled(value: Boolean) { logEnabled.value = value; persistAndPush() }
+    override fun setHideDesktop(value: Boolean) { hideDesktop.value = value; com.zaka.wechatglass.DesktopIcon.apply(app, value); persistAndPush() }
     override fun setHeight(value: Int) { height.value = value.coerceIn(52, 88); persistAndPush() }
     override fun setTabWidth(value: Int) { tabWidth.value = value.coerceIn(60, 100); persistAndPush() }
     override fun setSideMargin(value: Int) { sideMargin.value = value.coerceIn(12, 40); persistAndPush() }
@@ -209,6 +211,7 @@ private class IsoSettingsState(context: Context) : SettingsModel {
             .putBoolean("show_plus", showPlus.value)
             .putBoolean("show_labels", showLabels.value)
             .putBoolean("verbose_log", logEnabled.value)
+            .putBoolean("hide_desktop_icon", hideDesktop.value)
             .putInt("dock_height_dp", height.value)
             .putInt("tab_width_dp", tabWidth.value)
             .putInt("side_margin_dp", sideMargin.value)

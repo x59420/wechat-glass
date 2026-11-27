@@ -2,7 +2,7 @@
 
 面向微信 Android 客户端的 LSPosed 模块，把微信底部导航栏换成悬浮液态玻璃 Dock。
 
-> 当前版本：**0.9.4**（versionCode 106）
+> 当前版本：**0.9.5**（versionCode 107）
 >
 > 玻璃渲染参考 [KernelSU](https://github.com/tiann/KernelSU) 的 `FloatingBottomBar`
 > 与 Miuix 的模糊、折射参数。
@@ -32,7 +32,7 @@
 
 ## 安装
 
-1. 从 Releases 下载 `wxglass-0.9.4.apk`
+1. 从 Releases 下载 `wxglass-0.9.5.apk`
 2. 覆盖安装；签名冲突时先卸载旧版
 3. LSPosed 启用 wxglass，作用域勾选「微信」（`com.tencent.mm`）
 4. 强行停止微信后重新打开

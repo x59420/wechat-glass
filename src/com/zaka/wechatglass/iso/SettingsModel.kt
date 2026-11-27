@@ -11,6 +11,7 @@ internal interface SettingsModel {
     val showPlus: MutableState<Boolean>
     val showLabels: MutableState<Boolean>
     val logEnabled: MutableState<Boolean>
+    val hideDesktop: MutableState<Boolean>
     val themeMode: MutableState<Int>
     val glassAlpha: MutableState<Int>
     val hideBackground: MutableState<Boolean>
@@ -25,6 +26,7 @@ internal interface SettingsModel {
     fun setShowPlus(value: Boolean)
     fun setShowLabels(value: Boolean)
     fun setLogEnabled(value: Boolean)
+    fun setHideDesktop(value: Boolean)
     fun setThemeMode(value: Int)
     fun setGlassAlpha(value: Int)
     fun setHideBackground(value: Boolean)
