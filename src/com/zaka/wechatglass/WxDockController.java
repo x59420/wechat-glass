@@ -959,6 +959,8 @@ final class WxDockController {
     /** 明确知道是二级页的标题；这些优先于主标题判断。 */
     private static boolean hasExplicitNonMainTitle(View root) {
         if (!(root instanceof ViewGroup)) return false;
+        // 通讯录列表里本身就有「群聊」「新的朋友」这些词，不能当二级页标题。
+        if (isContactsPage(root)) return false;
         java.util.ArrayDeque<View> queue = new java.util.ArrayDeque<View>();
         java.util.IdentityHashMap<View, Boolean> seen =
                 new java.util.IdentityHashMap<View, Boolean>();
@@ -971,7 +973,7 @@ final class WxDockController {
             if (v == null || seen.put(v, Boolean.TRUE) != null) continue;
             if (v instanceof android.widget.TextView && v.isShown()) {
                 v.getLocationInWindow(loc);
-                if (loc[1] < screenH * 0.32f) {
+                if (loc[1] < screenH * 0.12f) {
                     CharSequence cs = ((android.widget.TextView) v).getText();
                     if (cs != null) {
                         String t = cs.toString().trim();
