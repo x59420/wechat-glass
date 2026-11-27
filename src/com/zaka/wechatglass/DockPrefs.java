@@ -46,7 +46,7 @@ final class DockPrefs {
     static final int DEF_HEIGHT = 64;
     static final int DEF_TAB_WIDTH = 76;
     static final int DEF_SIDE_MARGIN = 28;
-    static final int DEF_BOTTOM_GAP = 12;
+    static final int DEF_BOTTOM_GAP = 8;
 
     static final int MIN_HEIGHT = 52;
     static final int MAX_HEIGHT = 88;

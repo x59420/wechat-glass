@@ -1397,12 +1397,11 @@ final class WxDockController {
             int tabsWidth = Math.min(available, Math.max(desiredWidth, available));
             if (tabsWidth <= 0) return;
             int left = edge + Math.max(0, (available - tabsWidth) / 2);
-            int top = bandTop + bandRect.height()
-                    - (int) (DockPrefs.bottomGapDp(act) * density) - pill;
+            int gapPx = (int) (DockPrefs.bottomGapDp(act) * density);
+            int top = bandTop + bandRect.height() - gapPx - pill;
 
-            // 不许压进系统手势条：用 WindowVisibleDisplayFrame 做硬边界。
-            // 刚冷启动时 RootWindowInsets 可能还是 0，只看 inset 会时对时错，
-            // visible frame 则一开始就是稳定的。
+            // 以窗口可见区域底边为基准算位置，bottomGap 才会真正生效。
+            // 之前用原生底栏底边再让导航栏 clamp 覆盖，导致离底部距离调了等于没调。
             try {
                 Rect visible = new Rect();
                 View decor = act.getWindow() == null ? null : act.getWindow().getDecorView();
@@ -1410,8 +1409,7 @@ final class WxDockController {
                     decor.getWindowVisibleDisplayFrame(visible);
                     int visibleBottom = visible.bottom - overlayLoc[1];
                     if (visibleBottom > 0) {
-                        int limit = visibleBottom - pill;
-                        if (top > limit) top = limit;
+                        top = visibleBottom - gapPx - pill;
                     }
                 }
             } catch (Throwable ignored) {
