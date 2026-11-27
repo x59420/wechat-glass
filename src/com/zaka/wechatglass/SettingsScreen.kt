@@ -86,6 +86,7 @@ import top.yukonga.miuix.kmp.blur.drawBackdrop
 import top.yukonga.miuix.kmp.blur.layerBackdrop
 import top.yukonga.miuix.kmp.blur.rememberLayerBackdrop
 import com.zaka.wechatglass.ksu.liquid.vibrancy
+import com.zaka.wechatglass.ksu.liquid.lens
 import com.zaka.wechatglass.iso.SettingsModel
 
 /**
@@ -867,8 +868,12 @@ private fun Modifier.glassSurface(backdrop: Backdrop, shape: Shape): Modifier {
             backdrop = backdrop,
             shape = { shape },
             effects = {
-                blur(22.dp.toPx(), 22.dp.toPx())
                 vibrancy()
+                blur(4.dp.toPx(), 4.dp.toPx())
+                lens(
+                    refractionHeight = 13.dp.toPx(),
+                    refractionAmount = 11.dp.toPx(),
+                )
             },
             onDrawSurface = { drawRect(surfaceTint) },
         )
