@@ -65,14 +65,59 @@ final class WxTabBar {
     static ViewGroup find(View root, Activity act) {
         // 1) 按 id 直接命中（最快也最准）
         ViewGroup byId = findById(act);
-        if (byId != null) return byId;
+        if (byId != null) {
+            WechatGlass.log("底栏:find byId " + byId.getClass().getName()
+                    + " " + byId.getWidth() + "x" + byId.getHeight());
+            return byId;
+        }
 
         // 2) 按类名广度遍历（不钻死胡同，节点预算给足）
         ViewGroup named = bfsByName(root);
-        if (named != null) return named;
+        if (named != null) {
+            WechatGlass.log("底栏:find byName " + named.getClass().getName()
+                    + " " + named.getWidth() + "x" + named.getHeight());
+            return named;
+        }
 
         // 3) 最后按形状兜底
-        return findByShape(root);
+        ViewGroup shape = findByShape(root);
+        if (shape == null) dumpTabCandidates(root);
+        return shape;
+    }
+
+    /** 找不到底栏时，把贴底的候选容器打出来，定位是换节点还是被隐藏。 */
+    private static void dumpTabCandidates(View root) {
+        try {
+            if (!(root instanceof ViewGroup)) return;
+            java.util.ArrayDeque<View> q = new java.util.ArrayDeque<View>();
+            java.util.IdentityHashMap<View, Boolean> seen = new java.util.IdentityHashMap<View, Boolean>();
+            q.add(root);
+            int[] loc = new int[2];
+            int screenH = root.getResources().getDisplayMetrics().heightPixels;
+            int budget = 20000;
+            int count = 0;
+            while (!q.isEmpty() && budget-- > 0 && count < 12) {
+                View v = q.poll();
+                if (v == null || seen.put(v, Boolean.TRUE) != null) continue;
+                if (v instanceof ViewGroup) {
+                    ViewGroup g = (ViewGroup) v;
+                    for (int i = 0; i < g.getChildCount(); i++) q.add(g.getChildAt(i));
+                    v.getLocationInWindow(loc);
+                    String n = v.getClass().getName();
+                    boolean bottom = loc[1] > screenH * 0.72f;
+                    if (bottom && (n.toLowerCase().contains("tab")
+                            || n.toLowerCase().contains("bottom")
+                            || ((ViewGroup) v).getChildCount() >= 3)) {
+                        WechatGlass.log("底栏候选:" + n + " " + v.getWidth() + "x" + v.getHeight()
+                                + " y=" + loc[1] + " shown=" + v.isShown()
+                                + " vis=" + v.getVisibility()
+                                + " children=" + ((ViewGroup) v).getChildCount());
+                        count++;
+                    }
+                }
+            }
+        } catch (Throwable ignored) {
+        }
     }
 
     /** 只按 id 快速探一下，给"这是不是首页"这种每页都要问的判断用。 */
