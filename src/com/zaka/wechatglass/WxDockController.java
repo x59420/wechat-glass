@@ -530,6 +530,11 @@ final class WxDockController {
 
         // 先上 KernelSU 那套 Compose 渲染器；它要是起不来，就退到 Canvas 版，
         // 总之不能让用户看到「底栏一点没变」。
+        // 兜底只用于通讯录这种软件渲染页；回到微信/发现必须恢复 Compose，
+        // 否则整个首页都会变成一块实色玻璃。
+        if (!isContactsPage(decor)) {
+            synchronized (FORCE_FALLBACK) { FORCE_FALLBACK.remove(act); }
+        }
         DockLayer created = null;
         if (!Boolean.TRUE.equals(FORCE_FALLBACK.get(act))) {
             created = IsoDock.create(act, glassLog, onTab, onPlus, onLongPress, hostPainter);
@@ -584,6 +589,21 @@ final class WxDockController {
             public void run() {
                 if (!live[0]) return;
                 try {
+                    if (Boolean.TRUE.equals(FORCE_FALLBACK.get(act))
+                            && !isContactsPage(decor)) {
+                        // 离开通讯录：撤掉 Canvas 兜底，恢复 Compose 玻璃。
+                        live[0] = false;
+                        MAIN.removeCallbacks(this);
+                        synchronized (FORCE_FALLBACK) { FORCE_FALLBACK.remove(act); }
+                        teardown(act, "离开通讯录，恢复 Compose");
+                        MAIN.postDelayed(new Runnable() {
+                            @Override
+                            public void run() {
+                                attempt(act, 0);
+                            }
+                        }, 250L);
+                        return;
+                    }
                     if (iso.isBroken()) {
                         live[0] = false;
                         MAIN.removeCallbacks(this);
@@ -1052,6 +1072,37 @@ final class WxDockController {
      * 胶囊按设置的高度 / 单格宽度算，整组按屏幕宽度居中，底部离手势条留间距。
      * 微信没有「＋」，所以 plusRect 给空矩形，渲染层自然不画那个圆球。
      */
+    /** 通讯录页会强制软件渲染，Compose 的 RuntimeShader 不能用。 */
+    private static boolean isContactsPage(View decor) {
+        if (!(decor instanceof ViewGroup)) return false;
+        java.util.ArrayDeque<View> q = new java.util.ArrayDeque<View>();
+        java.util.IdentityHashMap<View, Boolean> seen = new java.util.IdentityHashMap<View, Boolean>();
+        q.add(decor);
+        int[] loc = new int[2];
+        int budget = 8000;
+        while (!q.isEmpty() && budget-- > 0) {
+            View v = q.poll();
+            if (v == null || seen.put(v, Boolean.TRUE) != null) continue;
+            if (v instanceof android.widget.TextView && v.isShown()) {
+                v.getLocationInWindow(loc);
+                if (loc[1] < decor.getHeight() * 0.18f) {
+                    String t = ((android.widget.TextView) v).getText() == null ? ""
+                            : ((android.widget.TextView) v).getText().toString().trim();
+                    String base = t.replaceAll("\\s*\\(\\d+\\)\\s*$", "").trim();
+                    if (base.equals("通讯录") || base.equals("Contacts")) return true;
+                }
+            }
+            if (v instanceof ViewGroup) {
+                ViewGroup g = (ViewGroup) v;
+                for (int i = 0; i < g.getChildCount(); i++) {
+                    View c = g.getChildAt(i);
+                    if (c != null && !c.getClass().getName().startsWith(WechatGlass.PKG)) q.add(c);
+                }
+            }
+        }
+        return false;
+    }
+
     private static void applyGeometry(Activity act, DockLayer iso, Backdrop backdrop,
                                       Rect bandRect, int count) {
         if (iso == null || bandRect == null) return;
