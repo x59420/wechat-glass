@@ -228,7 +228,8 @@ final class WxDockController {
                         }
                         View decor = safeDecor(a);
                         if (decor == null) continue;
-                        if (hasMainTitle(decor) && !hasChatInput(decor)
+                        if ((hasMainTitle(decor) || isOnMainTab(a, decor))
+                                && !hasChatInput(decor)
                                 && !hasExplicitNonMainTitle(decor)) {
                             NON_HOST = false;
                             SUB_PAGE = false;
@@ -876,7 +877,7 @@ final class WxDockController {
             if (v == null || seen.put(v, Boolean.TRUE) != null) continue;
             if (v instanceof android.widget.TextView && v.isShown()) {
                 v.getLocationInWindow(loc);
-                if (loc[1] < screenH * 0.22f) {
+                if (loc[1] < screenH * 0.32f) {
                     CharSequence cs = ((android.widget.TextView) v).getText();
                     if (cs != null) {
                         String t = cs.toString().trim();
