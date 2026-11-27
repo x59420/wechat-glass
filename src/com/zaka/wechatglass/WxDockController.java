@@ -60,6 +60,8 @@ final class WxDockController {
             new WeakHashMap<Activity, Backdrop>();
     private static final WeakHashMap<Activity, ViewGroup> BARS =
             new WeakHashMap<Activity, ViewGroup>();
+    private static final WeakHashMap<Activity, Boolean> FORCE_FALLBACK =
+            new WeakHashMap<Activity, Boolean>();
     private static final WeakHashMap<Activity, List<View>> ITEMS =
             new WeakHashMap<Activity, List<View>>();
     private static final WeakHashMap<Activity, Rect> BANDS =
@@ -528,7 +530,10 @@ final class WxDockController {
 
         // 先上 KernelSU 那套 Compose 渲染器；它要是起不来，就退到 Canvas 版，
         // 总之不能让用户看到「底栏一点没变」。
-        DockLayer created = IsoDock.create(act, glassLog, onTab, onPlus, onLongPress, hostPainter);
+        DockLayer created = null;
+        if (!Boolean.TRUE.equals(FORCE_FALLBACK.get(act))) {
+            created = IsoDock.create(act, glassLog, onTab, onPlus, onLongPress, hostPainter);
+        }
         if (created == null) {
             WechatGlass.warn("底栏:Compose 渲染器没起来，改用兜底玻璃层");
             created = FallbackDock.create(act, glassLog, onTab);
@@ -582,8 +587,17 @@ final class WxDockController {
                     if (iso.isBroken()) {
                         live[0] = false;
                         MAIN.removeCallbacks(this);
-                        teardown(act, "玻璃渲染出错");
-                        WechatGlass.warn("底栏:玻璃渲染出错，已恢复微信原生底栏");
+                        // 通讯录等页面会强制软件渲染，Compose 的 RuntimeShader 直接不可用。
+                        // 这种情况下不要退回原生底栏，换 Canvas 兜底继续显示玻璃。
+                        synchronized (FORCE_FALLBACK) { FORCE_FALLBACK.put(act, Boolean.TRUE); }
+                        teardown(act, "玻璃渲染出错，切换兜底");
+                        WechatGlass.warn("底栏:Compose 渲染失败，切换 Canvas 兜底");
+                        MAIN.postDelayed(new Runnable() {
+                            @Override
+                            public void run() {
+                                attempt(act, 0);
+                            }
+                        }, 300L);
                         return;
                     }
                     if (act.isFinishing() || act.isDestroyed()) {
