@@ -27,7 +27,7 @@ import de.robv.android.xposed.XposedHelpers;
 final class WxAntiRevoke {
 
     /** 消息防撤回。 */
-    static final boolean DISABLED = false;
+    static final boolean DISABLED = true;
 
     /** 微信用的是自家的 WCDB（Android SQLiteDatabase 的分支），两个都挂上。 */
     private static final String[] DB_CLASSES = {

@@ -408,20 +408,7 @@ internal fun SettingsScreen(
                                 checked = state.videoTint.value,
                                 onChange = state::setVideoTint,
                             )
-                            Divider()
-                            SwitchRow(
-                                title = "消息防撤回",
-                                subtitle = "别人撤回的消息留在原地，自己撤回照常",
-                                checked = state.antiRevoke.value,
-                                onChange = state::setAntiRevoke,
-                            )
-                            Divider()
-                            SwitchRow(
-                                title = "头像上方显示时间",
-                                subtitle = "聊天页每条消息的头像上面标 时:分:秒",
-                                checked = state.chatTime.value,
-                                onChange = state::setChatTime,
-                            )
+
                             Divider()
                             SwitchRow(
                                 title = "记录日志",

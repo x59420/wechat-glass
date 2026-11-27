@@ -66,6 +66,9 @@ final class WxDockController {
             new WeakHashMap<Activity, android.view.ViewTreeObserver.OnGlobalLayoutListener>();
     private static final WeakHashMap<Activity, Long> CHAT_WATCH_AT =
             new WeakHashMap<Activity, Long>();
+    /** 从聊天返回首页的短暂快速模式：只影响显示动画。 */
+    private static final WeakHashMap<Activity, Boolean> QUICK_RETURN =
+            new WeakHashMap<Activity, Boolean>();
     private static final WeakHashMap<Activity, List<View>> ITEMS =
             new WeakHashMap<Activity, List<View>>();
     private static final WeakHashMap<Activity, Rect> BANDS =
@@ -278,6 +281,7 @@ final class WxDockController {
                                     && !isKnownSubPage(decor) && !isAddFriendPage(decor)) {
                                 SUB_PAGE = false;
                                 NON_HOST = false;
+                                synchronized (QUICK_RETURN) { QUICK_RETURN.put(act, Boolean.TRUE); }
                                 synchronized (OVERLAYS) {
                                     if (!OVERLAYS.containsKey(act)) attempt(act, 0);
                                 }
@@ -289,7 +293,7 @@ final class WxDockController {
                                                     && !hasChatInput(decor)) attempt(act, 0);
                                         }
                                     }
-                                }, 70L);
+                                }, 0L);
                                 MAIN.postDelayed(new Runnable() {
                                     @Override public void run() {
                                         synchronized (OVERLAYS) {
@@ -297,7 +301,12 @@ final class WxDockController {
                                                     && !hasChatInput(decor)) attempt(act, 0);
                                         }
                                     }
-                                }, 160L);
+                                }, 60L);
+                                MAIN.postDelayed(new Runnable() {
+                                    @Override public void run() {
+                                        synchronized (QUICK_RETURN) { QUICK_RETURN.remove(act); }
+                                    }
+                                }, 700L);
                             }
                         } catch (Throwable ignored) {
                         }
@@ -1493,6 +1502,23 @@ final class WxDockController {
         iso.setBackdrop(sampled);
     }
 
+    private static long inMs(View view) {
+        try {
+            android.content.Context ctx = view.getContext();
+            while (ctx instanceof android.content.ContextWrapper) {
+                if (ctx instanceof Activity) {
+                    synchronized (QUICK_RETURN) {
+                        if (Boolean.TRUE.equals(QUICK_RETURN.get((Activity) ctx))) return 80L;
+                    }
+                    break;
+                }
+                ctx = ((android.content.ContextWrapper) ctx).getBaseContext();
+            }
+        } catch (Throwable ignored) {
+        }
+        return IN_MS;
+    }
+
     private static void animate(final View view, final boolean show) {
         if (view == null) return;
         try {
@@ -1501,7 +1527,8 @@ final class WxDockController {
                 view.setVisibility(View.VISIBLE);
                 view.setAlpha(0f);
                 view.setTranslationY(6f * view.getResources().getDisplayMetrics().density);
-                view.animate().alpha(1f).translationY(0f).setDuration(IN_MS).start();
+                view.animate().alpha(1f).translationY(0f)
+                        .setDuration(inMs(view)).start();
             } else {
                 view.animate().alpha(0f)
                         .translationY(6f * view.getResources().getDisplayMetrics().density)

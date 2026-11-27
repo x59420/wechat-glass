@@ -42,7 +42,7 @@ import de.robv.android.xposed.XposedHelpers;
 final class WxChatTime {
 
     /** 头像时间功能。 */
-    static final boolean DISABLED = false;
+    static final boolean DISABLED = true;
 
     /** 已知的聊天页类名，挂上 pause/destroy 用来及时摘掉浮层。 */
     private static final String[] CHAT_ACTIVITIES = {
