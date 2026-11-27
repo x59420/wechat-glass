@@ -701,7 +701,6 @@ private fun ThemeModeRow(backdrop: Backdrop, themeMode: Int, onChange: (Int) -> 
     val current = themeMode.coerceIn(0, 2)
     var open by remember { mutableStateOf(false) }
     val popupGapPx = with(LocalDensity.current) { 2.dp.roundToPx() }
-    var chipRect by remember { mutableStateOf(Rect.Zero) }
 
     Box(Modifier.fillMaxWidth()) {
         Row(
@@ -724,25 +723,12 @@ private fun ThemeModeRow(backdrop: Backdrop, themeMode: Int, onChange: (Int) -> 
                     .background(palette.card.copy(alpha = 0.72f))
                     .border(1.dp, palette.border, RoundedCornerShape(13.dp))
                     .padding(horizontal = 14.dp, vertical = 9.dp)
-                    .onGloballyPositioned { chipRect = it.boundsInWindow() }
             ) {
                 Label(modes[current], palette.primary, 13.sp, weight = FontWeight.Medium)
                 if (open) {
                     Popup(
-                        popupPositionProvider = object : PopupPositionProvider {
-                            override fun calculatePosition(
-                                anchorBounds: IntRect,
-                                windowSize: IntSize,
-                                layoutDirection: LayoutDirection,
-                                popupContentSize: IntSize,
-                            ): IntOffset {
-                                return IntOffset(
-                                    x = (chipRect.right.roundToInt() - popupContentSize.width)
-                                        .coerceAtLeast(0),
-                                    y = chipRect.bottom.roundToInt() + popupGapPx,
-                                )
-                            }
-                        },
+                        alignment = Alignment.BottomEnd,
+                        offset = IntOffset(0, popupGapPx),
                         onDismissRequest = { open = false },
                         properties = PopupProperties(focusable = true),
                     ) {
