@@ -73,6 +73,8 @@ jobs:
           test -n "$APK"
           VER="$(basename "$APK" .apk | sed 's/^wxglass-//')"
           TAG="v${VER}-build.${GITHUB_RUN_NUMBER}"
-          gh release create "$TAG" "$APK" \
-            --title "wxglass ${VER} (build ${GITHUB_RUN_NUMBER})" \
-            --notes "自动构建发布。源码提交：${GITHUB_SHA}"
+          PRE=""
+          case "$VER" in *test*|*beta*|*TEST*|*BETA*) PRE="--prerelease" ;; esac
+          gh release create "$TAG" "$APK" $PRE \
+            --title "wxglass ${VER} (build ${GITHUB_RUN_NUMBER})${PRE:+ · 测试版}" \
+            --notes "自动构建发布。源码提交：${GITHUB_SHA}${PRE:+；这是测试版，不保证稳定。}"

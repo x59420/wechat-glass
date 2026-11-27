@@ -57,6 +57,9 @@ import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalContext
+import android.content.Intent
+import android.net.Uri
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -469,6 +472,36 @@ internal fun SettingsScreen(
                         val bridge = log
                         var logText by remember { mutableStateOf(bridge?.read().orEmpty()) }
                         var notice by remember { mutableStateOf<String?>(null) }
+                        var updateNotice by remember { mutableStateOf<String?>(null) }
+                        var updateUrl by remember { mutableStateOf<String?>(null) }
+                        val ctx = LocalContext.current
+                        SectionTitle("更新")
+                        GlassCard(scene) {
+                            TextRow(
+                                title = "检测更新",
+                                subtitle = updateNotice ?: "检查 GitHub 最新版本",
+                                onClick = {
+                                    val url = updateUrl
+                                    if (url != null) {
+                                        ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+                                        return@TextRow
+                                    }
+                                    updateNotice = "检查中…"
+                                    Thread {
+                                        val reply = UpdateChecker.latest()
+                                        android.os.Handler(android.os.Looper.getMainLooper()).post {
+                                            if (reply == null) {
+                                                updateNotice = "检查失败，请检查网络"
+                                            } else {
+                                                updateNotice = "最新：${reply.tag}"
+                                                updateUrl = reply.url
+                                            }
+                                        }
+                                    }.start()
+                                },
+                            )
+                        }
+                        Spacer(Modifier.height(12.dp))
                         SectionTitle("运行日志")
                         GlassCard(scene) {
                             if (bridge == null) {
@@ -1042,5 +1075,28 @@ private fun TextRow(title: String, subtitle: String, onClick: () -> Unit) {
             Label(subtitle, LocalSettingsPalette.current.secondary, 11.5.sp)
         }
         Label("›", LocalSettingsPalette.current.secondary, 20.sp)
+    }
+}
+
+
+/** 轻量更新检查：只读 GitHub 最新 release，不自动下载 APK。 */
+private object UpdateChecker {
+    data class Release(val tag: String, val url: String)
+
+    fun latest(): Release? {
+        return try {
+            val conn = java.net.URL(
+                "https://api.github.com/repos/x59420/wechat-glass/releases/latest"
+            ).openConnection() as java.net.HttpURLConnection
+            conn.connectTimeout = 8000
+            conn.readTimeout = 8000
+            conn.setRequestProperty("Accept", "application/vnd.github+json")
+            conn.setRequestProperty("User-Agent", "wxglass-updater")
+            val text = conn.inputStream.bufferedReader().use { it.readText() }
+            val obj = org.json.JSONObject(text)
+            Release(obj.optString("tag_name"), obj.optString("html_url"))
+        } catch (t: Throwable) {
+            null
+        }
     }
 }
