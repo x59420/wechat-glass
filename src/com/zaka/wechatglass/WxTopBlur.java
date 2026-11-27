@@ -29,12 +29,33 @@ final class WxTopBlur {
             Class<?> algoCls = Class.forName("ll5.k", false, cl);
             Object algo = newAlgorithm(context, algoCls);
             if (algo == null) throw new IllegalStateException("ll5.k 没有可用构造器");
-            f.getMethod("b", Class.forName("ll5.e", false, cl)).invoke(ctl, algo);
-            f.getMethod("j", Drawable.class).invoke(ctl, decor.getBackground());
-            f.getMethod("h", float.class).invoke(ctl, 15f);
-            f.getMethod("k", boolean.class).invoke(ctl, true);
-            f.getMethod("e", boolean.class).invoke(ctl, false);
-            f.getMethod("i", boolean.class).invoke(ctl, true);
+            // 不同微信版本 f 的混淆方法名不一样，按参数类型找“设置算法”的那个。
+            boolean set = false;
+            for (java.lang.reflect.Method m : f.getMethods()) {
+                Class<?>[] ps = m.getParameterTypes();
+                if (ps.length != 1 || ps[0].isPrimitive()) continue;
+                if (!ps[0].isAssignableFrom(algo.getClass())) continue;
+                try {
+                    m.setAccessible(true);
+                    m.invoke(ctl, algo);
+                    set = true;
+                    WechatGlass.log("顶栏:模糊算法 " + m.getName()
+                            + "(" + ps[0].getName() + ")");
+                    break;
+                } catch (Throwable ignored) {
+                }
+            }
+            if (!set) throw new IllegalStateException("ll5.f 没有设置算法的方法");
+            try { f.getMethod("j", Drawable.class).invoke(ctl, decor.getBackground()); }
+            catch (Throwable ignored) { }
+            try { f.getMethod("h", float.class).invoke(ctl, 15f); }
+            catch (Throwable ignored) { }
+            try { f.getMethod("k", boolean.class).invoke(ctl, true); }
+            catch (Throwable ignored) { }
+            try { f.getMethod("e", boolean.class).invoke(ctl, false); }
+            catch (Throwable ignored) { }
+            try { f.getMethod("i", boolean.class).invoke(ctl, true); }
+            catch (Throwable ignored) { }
 
             bvCls.getField("f").setFloat(bv, 0f);
             bvCls.getField("e").setInt(bv, tint);
