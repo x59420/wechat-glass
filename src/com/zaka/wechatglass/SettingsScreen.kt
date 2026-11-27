@@ -58,6 +58,9 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.layout.boundsInWindow
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.geometry.Rect
 import android.content.Intent
 import android.net.Uri
 import androidx.compose.ui.text.TextStyle
@@ -698,6 +701,7 @@ private fun ThemeModeRow(backdrop: Backdrop, themeMode: Int, onChange: (Int) -> 
     val current = themeMode.coerceIn(0, 2)
     var open by remember { mutableStateOf(false) }
     val popupGapPx = with(LocalDensity.current) { 2.dp.roundToPx() }
+    var chipRect by remember { mutableStateOf(Rect.Zero) }
 
     Box(Modifier.fillMaxWidth()) {
         Row(
@@ -720,6 +724,7 @@ private fun ThemeModeRow(backdrop: Backdrop, themeMode: Int, onChange: (Int) -> 
                     .background(palette.card.copy(alpha = 0.72f))
                     .border(1.dp, palette.border, RoundedCornerShape(13.dp))
                     .padding(horizontal = 14.dp, vertical = 9.dp)
+                    .onGloballyPositioned { chipRect = it.boundsInWindow() }
             ) {
                 Label(modes[current], palette.primary, 13.sp, weight = FontWeight.Medium)
                 if (open) {
@@ -732,8 +737,9 @@ private fun ThemeModeRow(backdrop: Backdrop, themeMode: Int, onChange: (Int) -> 
                                 popupContentSize: IntSize,
                             ): IntOffset {
                                 return IntOffset(
-                                    x = anchorBounds.right - popupContentSize.width,
-                                    y = anchorBounds.bottom + popupGapPx,
+                                    x = (chipRect.right.roundToInt() - popupContentSize.width)
+                                        .coerceAtLeast(0),
+                                    y = chipRect.bottom.roundToInt() + popupGapPx,
                                 )
                             }
                         },
@@ -795,15 +801,13 @@ private fun ThemeModeCapsule(
                         indication = null,
                     ) { onPick(index) }
                     .padding(horizontal = 14.dp, vertical = 11.dp),
-                contentAlignment = Alignment.Center,
+                contentAlignment = Alignment.CenterStart,
             ) {
                 Label(
                     label,
                     if (isSelected) palette.selectedText else palette.primary,
                     13.sp,
                     weight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
-                    modifier = Modifier.fillMaxWidth(),
-                    align = TextAlign.Center,
                 )
             }
         }
