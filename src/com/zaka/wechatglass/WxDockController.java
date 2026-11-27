@@ -228,8 +228,7 @@ final class WxDockController {
                         }
                         View decor = safeDecor(a);
                         if (decor == null) continue;
-                        if ((hasMainTitle(decor) || isOnMainTab(a, decor))
-                                && !hasChatInput(decor)
+                        if (hasMainTitle(decor) && !hasChatInput(decor)
                                 && !hasExplicitNonMainTitle(decor)) {
                             NON_HOST = false;
                             SUB_PAGE = false;
@@ -445,11 +444,6 @@ final class WxDockController {
         // 已经在聊天 / 添加朋友 / 二级页：不要安装 Dock。
         // 但回到主 tab 时，标题已经是“微信/通讯录/发现/我”，必须清掉旧状态，
         // 否则 SUB_PAGE 会永久卡住，首页也再也不出 Dock。
-        boolean mainTabNow = isOnMainTab(act, decor);
-        if (mainTabNow && !hasChatInput(decor) && !hasExplicitNonMainTitle(decor)) {
-            SUB_PAGE = false;
-            NON_HOST = false;
-        }
         if (SUB_PAGE) {
             if (hasMainTitle(decor) && !hasChatInput(decor)
                     && !hasNonMainPageTitle(decor)) {
@@ -763,14 +757,12 @@ final class WxDockController {
                         explicitSub = true;
                         SUB_PAGE = true;
                     }
-                    boolean mainTab = isOnMainTab(act, decor);
-                    if (!addFriendNow && (isContactsPage(decor) || (mainTab && !chatOpen && !explicitSub))) {
-                        // 四个主 tab 都以底栏选中项为准；聊天/二级页除外。
+                    if (!addFriendNow && isContactsPage(decor)) {
                         chatOpen = false;
                         SUB_PAGE = false;
                         NON_HOST = false;
                     }
-                    boolean blocked = chatOpen || (!mainTab && SUB_PAGE) || (top != null
+                    boolean blocked = chatOpen || SUB_PAGE || (top != null
                             && (isBlockedPage(top) || WxChatTime.isChatPage(top)));
                     boolean active = !otherOnTop && !blocked && !NON_HOST;
                     boolean covered;
