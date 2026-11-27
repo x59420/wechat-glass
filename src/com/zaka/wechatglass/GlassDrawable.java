@@ -48,8 +48,71 @@ final class GlassDrawable extends Drawable {
     }
 
     void setBackdrop(Bitmap bitmap) {
-        backdrop = bitmap;
+        backdrop = bitmap == null ? null : blur(bitmap, 10);
         invalidateSelf();
+    }
+
+    /** 弹层没有 GPU 采样，这里对背后那一块做一次快速 box blur，效果接近 Dock 的磨砂。 */
+    private static Bitmap blur(Bitmap src, int radius) {
+        if (src == null || src.isRecycled() || radius <= 0) return src;
+        try {
+            int w = src.getWidth();
+            int h = src.getHeight();
+            int[] pix = new int[w * h];
+            src.getPixels(pix, 0, w, 0, 0, w, h);
+            int[] tmp = new int[w * h];
+            for (int pass = 0; pass < 3; pass++) {
+                boxBlur(pix, tmp, w, h, radius);
+                int[] swap = pix; pix = tmp; tmp = swap;
+            }
+            Bitmap out = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888);
+            out.setPixels(pix, 0, w, 0, 0, w, h);
+            src.recycle();
+            return out;
+        } catch (Throwable t) {
+            return src;
+        }
+    }
+
+    private static void boxBlur(int[] src, int[] dst, int w, int h, int r) {
+        int div = r * 2 + 1;
+        for (int y = 0; y < h; y++) {
+            int a = 0, rr = 0, gg = 0, bb = 0;
+            int row = y * w;
+            for (int i = -r; i <= r; i++) {
+                int x = Math.max(0, Math.min(w - 1, i));
+                int c = src[row + x];
+                a += (c >>> 24); rr += (c >> 16) & 0xFF; gg += (c >> 8) & 0xFF; bb += c & 0xFF;
+            }
+            for (int x = 0; x < w; x++) {
+                dst[row + x] = ((a / div) << 24) | ((rr / div) << 16) | ((gg / div) << 8) | (bb / div);
+                int out = Math.max(0, Math.min(w - 1, x - r));
+                int in = Math.max(0, Math.min(w - 1, x + r + 1));
+                int co = src[row + out], ci = src[row + in];
+                a += ((ci >>> 24) - (co >>> 24));
+                rr += (((ci >> 16) & 0xFF) - ((co >> 16) & 0xFF));
+                gg += (((ci >> 8) & 0xFF) - ((co >> 8) & 0xFF));
+                bb += ((ci & 0xFF) - (co & 0xFF));
+            }
+        }
+        for (int x = 0; x < w; x++) {
+            int a = 0, rr = 0, gg = 0, bb = 0;
+            for (int i = -r; i <= r; i++) {
+                int y = Math.max(0, Math.min(h - 1, i));
+                int c = dst[y * w + x];
+                a += (c >>> 24); rr += (c >> 16) & 0xFF; gg += (c >> 8) & 0xFF; bb += c & 0xFF;
+            }
+            for (int y = 0; y < h; y++) {
+                src[y * w + x] = ((a / div) << 24) | ((rr / div) << 16) | ((gg / div) << 8) | (bb / div);
+                int out = Math.max(0, Math.min(h - 1, y - r));
+                int in = Math.max(0, Math.min(h - 1, y + r + 1));
+                int co = dst[out * w + x], ci = dst[in * w + x];
+                a += ((ci >>> 24) - (co >>> 24));
+                rr += (((ci >> 16) & 0xFF) - ((co >> 16) & 0xFF));
+                gg += (((ci >> 8) & 0xFF) - ((co >> 8) & 0xFF));
+                bb += ((ci & 0xFF) - (co & 0xFF));
+            }
+        }
     }
 
     @Override
